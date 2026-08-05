@@ -1,0 +1,12 @@
+db = db.getSiblingDB(process.env.MONGO_APP_DB);
+
+db.createUser({
+  user: process.env.MONGO_APP_USER,
+  pwd: process.env.MONGO_APP_PASS,
+  roles: [
+    { role: "readWrite", db: process.env.MONGO_APP_DB }
+  ]
+});
+
+db.createCollection("processing_results");
+db.createCollection("videos");
