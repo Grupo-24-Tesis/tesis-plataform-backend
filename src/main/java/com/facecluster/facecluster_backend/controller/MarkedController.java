@@ -9,9 +9,25 @@ import java.util.List;
 @RequestMapping("/api/marked")
 @CrossOrigin(origins = "*")
 public class MarkedController {
-    private final MarkedRepository repo;
-    public MarkedController(MarkedRepository repo) { this.repo = repo; }
 
-    @GetMapping public List<MarkedPerson> all() { return repo.findAll(); }
-    @PostMapping public MarkedPerson create(@RequestBody MarkedPerson body) { return repo.save(body); }
+    private final MarkedRepository repo;
+
+    public MarkedController(MarkedRepository repo) {
+        this.repo = repo;
+    }
+
+    @GetMapping
+    public List<MarkedPerson> all() {
+        return repo.findAll();
+    }
+
+    @PostMapping
+    public MarkedPerson create(@RequestBody MarkedPerson body) {
+        return repo.save(body);
+    }
+
+    @DeleteMapping("/{id}")
+    public void delete(@PathVariable String id) {
+        repo.deleteById(id);
+    }
 }
