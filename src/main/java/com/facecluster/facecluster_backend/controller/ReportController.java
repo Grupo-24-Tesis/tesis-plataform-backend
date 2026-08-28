@@ -2,14 +2,14 @@ package com.facecluster.facecluster_backend.controller;
 
 import com.facecluster.facecluster_backend.domain.ReportItem;
 import com.facecluster.facecluster_backend.repository.ReportRepository;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/reports")
+@CrossOrigin(origins = "*")
 public class ReportController {
 
     private final ReportRepository repo;
@@ -25,19 +25,43 @@ public class ReportController {
 
     @PostMapping
     public ReportItem create(@RequestBody ReportItem body) {
+
+        // Fecha de creación automática
+        body.setCreatedAt(LocalDateTime.now());
+
+        // incidentDate viene desde el frontend
         return repo.save(body);
     }
 
     @PutMapping("/{id}/status")
-    public ResponseEntity<ReportItem> updateStatus(
+    public ReportItem updateStatus(
             @PathVariable String id,
-            @RequestBody Map<String, String> body
+            @RequestBody StatusRequest request
     ) {
-        return repo.findById(id)
-                .map(report -> {
-                    report.setStatus(body.get("status"));
-                    return ResponseEntity.ok(repo.save(report));
-                })
-                .orElse(ResponseEntity.notFound().build());
+
+        ReportItem report = repo.findById(id)
+                .orElseThrow(() ->
+                        new RuntimeException("Reporte no encontrado"));
+
+        report.setStatus(request.status());
+
+        // Si se está resolviendo el reporte,
+        // también guardamos la fecha y descripción
+        if ("solucionado".equals(request.status())) {
+
+            report.setResolvedAt(request.resolvedAt());
+
+            report.setResolutionDescription(
+                    request.resolutionDescription()
+            );
+        }
+
+        return repo.save(report);
     }
+
+    public record StatusRequest(
+            String status,
+            LocalDateTime resolvedAt,
+            String resolutionDescription
+    ) {}
 }
