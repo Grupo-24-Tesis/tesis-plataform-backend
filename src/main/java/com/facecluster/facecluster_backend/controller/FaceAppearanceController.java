@@ -8,6 +8,9 @@ import com.facecluster.facecluster_backend.repository.ReportRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,132 +21,219 @@ import java.util.Map;
 @CrossOrigin(origins = "*")
 public class FaceAppearanceController {
 
-    private final FaceAppearanceRepository repository;
-    private final ReportRepository reportRepository;
-    private final MarkedRepository markedRepository;
 
-    public FaceAppearanceController(
-            FaceAppearanceRepository repository,
-            ReportRepository reportRepository,
-            MarkedRepository markedRepository
-    ) {
-        this.repository = repository;
-        this.reportRepository = reportRepository;
-        this.markedRepository = markedRepository;
+private final FaceAppearanceRepository repository;
+private final ReportRepository reportRepository;
+private final MarkedRepository markedRepository;
+
+public FaceAppearanceController(
+        FaceAppearanceRepository repository,
+        ReportRepository reportRepository,
+        MarkedRepository markedRepository
+) {
+    this.repository = repository;
+    this.reportRepository = reportRepository;
+    this.markedRepository = markedRepository;
+}
+
+
+// ==========================================
+// OBTENER TODAS LAS APARICIONES
+// ==========================================
+
+@GetMapping
+public List<FaceAppearance> findAll() {
+    return repository.findAll();
+}
+
+
+// ==========================================
+// OBTENER CARAS ÚNICAS CON FILTROS
+// ==========================================
+
+@GetMapping("/unique")
+public List<UniqueFaceResponse> findUniqueFaces(
+
+        @RequestParam(required = false)
+        String startDate,
+
+        @RequestParam(required = false)
+        String endDate,
+
+        @RequestParam(required = false)
+        Boolean hasReports,
+
+        @RequestParam(required = false)
+        Boolean suspect
+) {
+
+    // ==========================================
+    // OBTENER APARICIONES
+    // ==========================================
+
+    List<FaceAppearance> appearances;
+
+
+    // ==========================================
+    // FILTRO DE FECHA
+    // ==========================================
+
+    if (startDate != null &&
+        !startDate.isBlank() &&
+        endDate != null &&
+        !endDate.isBlank()) {
+
+        LocalDateTime start =
+                LocalDate.parse(startDate)
+                        .atStartOfDay();
+
+        LocalDateTime end =
+                LocalDate.parse(endDate)
+                        .atTime(LocalTime.MAX);
+
+        appearances =
+                repository.findByCapturedAtBetween(
+                        start,
+                        end
+                );
+
+    } else {
+
+        // Sin filtro de fecha
+        appearances = repository.findAll();
     }
 
 
     // ==========================================
-    // OBTENER TODAS LAS APARICIONES
+    // AGRUPAR POR FACE ID
     // ==========================================
 
-    @GetMapping
-    public List<FaceAppearance> findAll() {
-        return repository.findAll();
+    Map<String, List<FaceAppearance>> grouped =
+            new LinkedHashMap<>();
+
+    for (FaceAppearance appearance : appearances) {
+
+        grouped
+                .computeIfAbsent(
+                        appearance.getFaceId(),
+                        key -> new ArrayList<>()
+                )
+                .add(appearance);
     }
 
 
     // ==========================================
-    // OBTENER CARAS ÚNICAS
+    // CREAR RESPUESTA
     // ==========================================
 
-    @GetMapping("/unique")
-    public List<UniqueFaceResponse> findUniqueFaces() {
+    List<UniqueFaceResponse> response =
+            new ArrayList<>();
 
-        List<FaceAppearance> appearances = repository.findAll();
 
-        Map<String, List<FaceAppearance>> grouped =
-                new LinkedHashMap<>();
+    for (Map.Entry<String, List<FaceAppearance>> entry
+            : grouped.entrySet()) {
 
-        // Agrupar apariciones por faceId
-        for (FaceAppearance appearance : appearances) {
+        String faceId = entry.getKey();
 
-            grouped
-                    .computeIfAbsent(
-                            appearance.getFaceId(),
-                            key -> new ArrayList<>()
-                    )
-                    .add(appearance);
+        List<FaceAppearance> faceAppearances =
+                entry.getValue();
+
+
+        // ==========================================
+        // CONTAR REPORTES
+        // ==========================================
+
+        int reportCount =
+                reportRepository
+                        .findByFaceIdsContaining(faceId)
+                        .size();
+
+
+        // ==========================================
+        // VERIFICAR SOSPECHOSO
+        // ==========================================
+
+        boolean isSuspect =
+                markedRepository
+                        .findByFaceId(faceId)
+                        .isPresent();
+
+
+        // ==========================================
+        // FILTRO: REPORTES
+        // ==========================================
+
+        if (hasReports != null) {
+
+            boolean hasAnyReports =
+                    reportCount > 0;
+
+            if (hasReports != hasAnyReports) {
+                continue;
+            }
         }
 
-        List<UniqueFaceResponse> response =
-                new ArrayList<>();
 
-        // Crear respuesta para cada persona
-        for (Map.Entry<String, List<FaceAppearance>> entry
-                : grouped.entrySet()) {
+        // ==========================================
+        // FILTRO: SOSPECHOSO
+        // ==========================================
 
-            String faceId = entry.getKey();
+        if (suspect != null) {
 
-            List<FaceAppearance> faceAppearances =
-                    entry.getValue();
-
-
-            // ==========================================
-            // CONTAR REPORTES
-            // ==========================================
-
-            int reportCount =
-                    reportRepository
-                            .findByFaceIdsContaining(faceId)
-                            .size();
-
-
-            // ==========================================
-            // VERIFICAR SI ES SOSPECHOSO
-            // ==========================================
-
-            boolean suspect =
-                    markedRepository
-                            .findByFaceId(faceId)
-                            .isPresent();
-
-
-            // ==========================================
-            // AGREGAR PERSONA A LA RESPUESTA
-            // ==========================================
-
-            response.add(
-                    new UniqueFaceResponse(
-                            faceId,
-                            faceAppearances,
-                            reportCount,
-                            suspect
-                    )
-            );
+            if (suspect != isSuspect) {
+                continue;
+            }
         }
 
-        return response;
+
+        // ==========================================
+        // AGREGAR PERSONA
+        // ==========================================
+
+        response.add(
+                new UniqueFaceResponse(
+                        faceId,
+                        faceAppearances,
+                        reportCount,
+                        isSuspect
+                )
+        );
     }
 
 
-    // ==========================================
-    // CREAR APARICIÓN
-    // ==========================================
-
-    @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public FaceAppearance create(
-            @RequestBody FaceAppearance body
-    ) {
-
-        return repository.save(body);
-    }
+    return response;
+}
 
 
-    // ==========================================
-    // RESPUESTA PARA CARAS ÚNICAS
-    // ==========================================
+// ==========================================
+// CREAR APARICIÓN
+// ==========================================
 
-    public record UniqueFaceResponse(
+@PostMapping
+@ResponseStatus(HttpStatus.CREATED)
+public FaceAppearance create(
+        @RequestBody FaceAppearance body
+) {
 
-            String faceId,
+    return repository.save(body);
+}
 
-            List<FaceAppearance> appearances,
 
-            int reportCount,
+// ==========================================
+// RESPUESTA PARA CARAS ÚNICAS
+// ==========================================
 
-            boolean suspect
+public record UniqueFaceResponse(
 
-    ) {}
+        String faceId,
+
+        List<FaceAppearance> appearances,
+
+        int reportCount,
+
+        boolean suspect
+
+) {}
+
+
 }
