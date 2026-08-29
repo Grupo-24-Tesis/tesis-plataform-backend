@@ -1,5 +1,7 @@
 package com.facecluster.facecluster_backend.domain;
 
+import java.time.LocalDateTime;
+
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -13,6 +15,8 @@ public class FaceAppearance {
     private String timestamp;
     private String cameraId;
     private String frameUrl;
+
+    private LocalDateTime capturedAt;
 
     public FaceAppearance() {}
 
@@ -30,4 +34,12 @@ public class FaceAppearance {
 
     public String getFrameUrl() { return frameUrl; }
     public void setFrameUrl(String frameUrl) { this.frameUrl = frameUrl; }
+
+    public LocalDateTime getCapturedAt() {
+        return capturedAt;
+    }
+
+    public void setCapturedAt(LocalDateTime capturedAt) {
+        this.capturedAt = capturedAt;
+    }
 }
