@@ -4,6 +4,7 @@ import com.facecluster.facecluster_backend.domain.FaceAppearance;
 import com.facecluster.facecluster_backend.repository.FaceAppearanceRepository;
 import com.facecluster.facecluster_backend.repository.MarkedRepository;
 import com.facecluster.facecluster_backend.repository.ReportRepository;
+import com.facecluster.facecluster_backend.service.FaceImageService;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -25,15 +26,18 @@ public class FaceAppearanceController {
 private final FaceAppearanceRepository repository;
 private final ReportRepository reportRepository;
 private final MarkedRepository markedRepository;
+private final FaceImageService faceImageService;
 
 public FaceAppearanceController(
         FaceAppearanceRepository repository,
         ReportRepository reportRepository,
-        MarkedRepository markedRepository
+        MarkedRepository markedRepository,
+        FaceImageService faceImageService
 ) {
     this.repository = repository;
     this.reportRepository = reportRepository;
     this.markedRepository = markedRepository;
+    this.faceImageService = faceImageService;
 }
 
 
@@ -43,7 +47,8 @@ public FaceAppearanceController(
 
 @GetMapping
 public List<FaceAppearance> findAll() {
-    return repository.findAll();
+    // Solo apariciones cuya imagen sigue en S3, con URL prefirmada
+    return faceImageService.withS3Images(repository.findAll());
 }
 
 
@@ -102,6 +107,14 @@ public List<UniqueFaceResponse> findUniqueFaces(
         // Sin filtro de fecha
         appearances = repository.findAll();
     }
+
+
+    // ==========================================
+    // SOLO IMÁGENES QUE EXISTEN EN S3
+    // ==========================================
+
+    // Las personas sin ninguna imagen en el bucket no se muestran
+    appearances = faceImageService.withS3Images(appearances);
 
 
     // ==========================================
