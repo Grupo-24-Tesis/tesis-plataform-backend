@@ -18,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -35,6 +36,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -629,7 +631,11 @@ class VideoJobServiceTest {
             assertThat(job.getUpdatedAt()).isAfter(NOW.minus(1, ChronoUnit.HOURS));
         }
 
-        verify(faceAppearanceRepository, times(2)).deleteByJobId("job-1");
+        InOrder order = inOrder(faceAppearanceRepository, sqsVideoJobPublisher);
+        order.verify(faceAppearanceRepository).deleteByJobId("job-1");
+        order.verify(sqsVideoJobPublisher).publish(any());
+        order.verify(faceAppearanceRepository).deleteByJobId("job-1");
+        order.verify(sqsVideoJobPublisher).publish(any());
 
         ArgumentCaptor<VideoProcessingMessage> message =
                 ArgumentCaptor.forClass(VideoProcessingMessage.class);
@@ -660,6 +666,7 @@ class VideoJobServiceTest {
                                 .isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
 
         assertThat(job.getStatus()).isEqualTo(VideoJobStatus.QUEUE_ERROR);
+        verify(faceAppearanceRepository).deleteByJobId("job-1");
         verify(videoJobRepository).save(job);
     }
 

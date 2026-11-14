@@ -80,9 +80,7 @@ public class VideoJobService {
         job.setCreatedAt(now);
         job.setUpdatedAt(now);
 
-        VideoJob savedJob = videoJobRepository.save(job);
-
-        return toResponse(publishAndMarkQueued(savedJob));
+        return toResponse(publishAndMarkQueued(videoJobRepository.save(job)));
     }
 
     public VideoJobResponse retryJob(String jobId) {
@@ -107,26 +105,26 @@ public class VideoJobService {
         return toResponse(publishAndMarkQueued(job));
     }
 
-    private VideoJob publishAndMarkQueued(VideoJob savedJob) {
+    private VideoJob publishAndMarkQueued(VideoJob job) {
         VideoProcessingMessage message = new VideoProcessingMessage(
                 "VIDEO_UPLOAD_READY",
                 "1",
-                savedJob.getId(),
-                savedJob.getBucket(),
-                savedJob.getObjectKey(),
-                savedJob.getCameraId(),
-                savedJob.getOriginalFileName(),
-                detectContentType(savedJob.getOriginalFileName()),
-                savedJob.getCreatedAt()
+                job.getId(),
+                job.getBucket(),
+                job.getObjectKey(),
+                job.getCameraId(),
+                job.getOriginalFileName(),
+                detectContentType(job.getOriginalFileName()),
+                job.getCreatedAt()
         );
 
         try {
             sqsVideoJobPublisher.publish(message);
         } catch (RuntimeException exception) {
-            savedJob.setStatus(VideoJobStatus.QUEUE_ERROR);
-            savedJob.setUpdatedAt(Instant.now());
+            job.setStatus(VideoJobStatus.QUEUE_ERROR);
+            job.setUpdatedAt(Instant.now());
 
-            videoJobRepository.save(savedJob);
+            videoJobRepository.save(job);
 
             throw new ResponseStatusException(
                     HttpStatus.SERVICE_UNAVAILABLE,
@@ -136,14 +134,14 @@ public class VideoJobService {
         }
 
         try {
-            savedJob.setStatus(VideoJobStatus.QUEUED);
-            savedJob.setUpdatedAt(Instant.now());
+            job.setStatus(VideoJobStatus.QUEUED);
+            job.setUpdatedAt(Instant.now());
 
-            return videoJobRepository.save(savedJob);
+            return videoJobRepository.save(job);
         } catch (RuntimeException exception) {
             log.error(
                     "El mensaje del job {} se envió a la cola, pero no se pudo guardar el estado QUEUED",
-                    savedJob.getId(),
+                    job.getId(),
                     exception
             );
 

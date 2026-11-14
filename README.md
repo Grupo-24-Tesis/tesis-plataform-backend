@@ -161,7 +161,7 @@ imágenes borradas. Las personas sin ninguna imagen en el bucket no se muestran.
 
 ## Reintento de un video fallido
 
-`POST /api/video-jobs/{jobId}/retry` vuelve a enviar a la cola un video que ya está en S3. Solo se aceptan trabajos en `FAILED` o `QUEUE_ERROR`; con otro estado responde 409 y si el trabajo no existe responde 404. El backend borra las apariciones del trabajo, vacía `failureReason`, `startedAt`, `completedAt`, `faceCount` y `lastWorkerEventAt`, publica el mismo mensaje `VIDEO_UPLOAD_READY` de la subida original y deja el trabajo en `QUEUED`. Si la publicación falla, el trabajo queda en `QUEUE_ERROR` y la respuesta es 503, igual que al subir un video. La respuesta es el `VideoJobResponse` actualizado.
+`POST /api/video-jobs/{jobId}/retry` vuelve a enviar a la cola un video que ya está en S3. Solo se aceptan trabajos en `FAILED` o `QUEUE_ERROR`; con otro estado responde 409 y si el trabajo no existe responde 404. El backend borra las apariciones del trabajo, vacía `failureReason`, `startedAt`, `completedAt`, `faceCount` y `lastWorkerEventAt`, publica el mismo mensaje `VIDEO_UPLOAD_READY` de la subida original y deja el trabajo en `QUEUED`. Si la publicación falla, el trabajo queda en `QUEUE_ERROR` y la respuesta es 503, igual que al subir un video; en ese caso el trabajo queda en `QUEUE_ERROR` sin rostros y se puede reintentar de nuevo. La respuesta es el `VideoJobResponse` actualizado.
 
 Un evento `VIDEO_PROCESSING_COMPLETED` del intento anterior puede llegar después del reintento. Se acepta sin lógica adicional: los rostros son los mismos del mismo video.
 
