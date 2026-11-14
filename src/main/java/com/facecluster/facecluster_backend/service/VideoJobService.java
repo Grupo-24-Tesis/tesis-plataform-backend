@@ -82,6 +82,32 @@ public class VideoJobService {
 
         VideoJob savedJob = videoJobRepository.save(job);
 
+        return toResponse(publishAndMarkQueued(savedJob));
+    }
+
+    public VideoJobResponse retryJob(String jobId) {
+        VideoJob job = findJob(jobId);
+
+        if (!VideoJobStatus.FAILED.equals(job.getStatus())
+                && !VideoJobStatus.QUEUE_ERROR.equals(job.getStatus())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Solo se pueden reintentar videos fallidos"
+            );
+        }
+
+        faceAppearanceRepository.deleteByJobId(job.getId());
+
+        job.setFailureReason(null);
+        job.setStartedAt(null);
+        job.setCompletedAt(null);
+        job.setFaceCount(null);
+        job.setLastWorkerEventAt(null);
+
+        return toResponse(publishAndMarkQueued(job));
+    }
+
+    private VideoJob publishAndMarkQueued(VideoJob savedJob) {
         VideoProcessingMessage message = new VideoProcessingMessage(
                 "VIDEO_UPLOAD_READY",
                 "1",
@@ -113,7 +139,7 @@ public class VideoJobService {
             savedJob.setStatus(VideoJobStatus.QUEUED);
             savedJob.setUpdatedAt(Instant.now());
 
-            savedJob = videoJobRepository.save(savedJob);
+            return videoJobRepository.save(savedJob);
         } catch (RuntimeException exception) {
             log.error(
                     "El mensaje del job {} se envió a la cola, pero no se pudo guardar el estado QUEUED",
@@ -127,8 +153,6 @@ public class VideoJobService {
                     exception
             );
         }
-
-        return toResponse(savedJob);
     }
 
     public VideoJobResponse getJobById(String jobId) {

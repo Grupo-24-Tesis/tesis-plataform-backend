@@ -10,6 +10,7 @@ import com.facecluster.facecluster_backend.dto.VideoResultRequest.FaceAppearance
 import com.facecluster.facecluster_backend.messaging.InvalidWorkerEventException;
 import com.facecluster.facecluster_backend.messaging.SqsVideoJobPublisher;
 import com.facecluster.facecluster_backend.messaging.VideoProcessingEvent;
+import com.facecluster.facecluster_backend.messaging.VideoProcessingMessage;
 import com.facecluster.facecluster_backend.repository.CameraRepository;
 import com.facecluster.facecluster_backend.repository.FaceAppearanceRepository;
 import com.facecluster.facecluster_backend.repository.VideoJobRepository;
@@ -573,6 +574,106 @@ class VideoJobServiceTest {
         service.registerUploadedVideo(uploadRequest());
 
         verify(sqsVideoJobPublisher).publish(any());
+    }
+
+    @Test
+    void retryOfMissingJobIsNotFound() {
+        when(videoJobRepository.findById("missing")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.retryJob("missing"))
+                .isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
+                    assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+                    assertThat(exception.getReason()).isEqualTo("Trabajo no encontrado");
+                });
+    }
+
+    @Test
+    void retryOfNonRetryableStatusesIsConflict() {
+        for (String status : List.of(
+                VideoJobStatus.UPLOADED,
+                VideoJobStatus.QUEUED,
+                VideoJobStatus.PROCESSING,
+                VideoJobStatus.COMPLETED
+        )) {
+            storedJob(status);
+
+            assertThatThrownBy(() -> service.retryJob("job-1"))
+                    .isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
+                        assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+                        assertThat(exception.getReason())
+                                .isEqualTo("Solo se pueden reintentar videos fallidos");
+                    });
+        }
+
+        verify(faceAppearanceRepository, never()).deleteByJobId(any());
+        verify(sqsVideoJobPublisher, never()).publish(any());
+        verify(videoJobRepository, never()).save(any());
+    }
+
+    @Test
+    void retryOfFailedOrQueueErrorJobRequeuesIt() {
+        for (String status : List.of(VideoJobStatus.FAILED, VideoJobStatus.QUEUE_ERROR)) {
+            VideoJob job = failedJob(status);
+            when(videoJobRepository.save(any(VideoJob.class)))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
+
+            VideoJobResponse response = service.retryJob("job-1");
+
+            assertThat(response.status()).isEqualTo(VideoJobStatus.QUEUED);
+            assertThat(job.getStatus()).isEqualTo(VideoJobStatus.QUEUED);
+            assertThat(job.getFailureReason()).isNull();
+            assertThat(job.getStartedAt()).isNull();
+            assertThat(job.getCompletedAt()).isNull();
+            assertThat(job.getFaceCount()).isNull();
+            assertThat(job.getLastWorkerEventAt()).isNull();
+            assertThat(job.getUpdatedAt()).isAfter(NOW.minus(1, ChronoUnit.HOURS));
+        }
+
+        verify(faceAppearanceRepository, times(2)).deleteByJobId("job-1");
+
+        ArgumentCaptor<VideoProcessingMessage> message =
+                ArgumentCaptor.forClass(VideoProcessingMessage.class);
+        verify(sqsVideoJobPublisher, times(2)).publish(message.capture());
+        VideoProcessingMessage published = message.getValue();
+        assertThat(published.eventType()).isEqualTo("VIDEO_UPLOAD_READY");
+        assertThat(published.eventVersion()).isEqualTo("1");
+        assertThat(published.jobId()).isEqualTo("job-1");
+        assertThat(published.bucket()).isEqualTo(BUCKET);
+        assertThat(published.objectKey()).isEqualTo("videos/video.mp4");
+        assertThat(published.cameraId()).isEqualTo("CAM-01");
+        assertThat(published.originalFileName()).isEqualTo("video.mp4");
+        assertThat(published.contentType()).isEqualTo("video/mp4");
+        assertThat(published.createdAt()).isEqualTo(NOW.minus(1, ChronoUnit.DAYS));
+    }
+
+    @Test
+    void retryPublishFailureMarksQueueError() {
+        VideoJob job = failedJob(VideoJobStatus.FAILED);
+        when(videoJobRepository.save(any(VideoJob.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        doThrow(new IllegalStateException("sqs caido"))
+                .when(sqsVideoJobPublisher).publish(any());
+
+        assertThatThrownBy(() -> service.retryJob("job-1"))
+                .isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+                        assertThat(exception.getStatusCode())
+                                .isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
+
+        assertThat(job.getStatus()).isEqualTo(VideoJobStatus.QUEUE_ERROR);
+        verify(videoJobRepository).save(job);
+    }
+
+    private VideoJob failedJob(String status) {
+        VideoJob job = storedJob(status);
+        job.setBucket(BUCKET);
+        job.setObjectKey("videos/video.mp4");
+        job.setOriginalFileName("video.mp4");
+        job.setFailureReason("fallo");
+        job.setStartedAt(NOW.minus(2, ChronoUnit.HOURS));
+        job.setCompletedAt(NOW.minus(1, ChronoUnit.HOURS));
+        job.setFaceCount(3);
+        job.setLastWorkerEventAt(NOW.minus(1, ChronoUnit.HOURS));
+        return job;
     }
 
     private void assertBadRequest(VideoUploadedRequest request, String message) {

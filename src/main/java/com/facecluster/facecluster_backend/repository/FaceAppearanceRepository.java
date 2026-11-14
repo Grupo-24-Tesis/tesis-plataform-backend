@@ -12,6 +12,8 @@ public interface FaceAppearanceRepository
 
     List<FaceAppearance> findByJobIdOrderByTimestampAsc(String jobId);
 
+    void deleteByJobId(String jobId);
+
     List<FaceAppearance> findByCapturedAtBetween(Range<LocalDateTime> range);
 
     List<FaceAppearance> findByCapturedAtGreaterThanEqual(LocalDateTime start);

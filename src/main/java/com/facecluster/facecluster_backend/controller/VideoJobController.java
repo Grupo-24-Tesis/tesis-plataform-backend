@@ -51,6 +51,13 @@ public class VideoJobController {
         return videoJobService.getJobById(jobId);
     }
 
+    @PostMapping("/{jobId}/retry")
+    public VideoJobResponse retryJob(
+            @PathVariable String jobId
+    ) {
+        return videoJobService.retryJob(jobId);
+    }
+
     @PostMapping("/{jobId}/results")
     public void receiveResults(
         @PathVariable String jobId,

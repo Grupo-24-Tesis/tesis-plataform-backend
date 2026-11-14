@@ -159,6 +159,12 @@ no existe en el bucket o cuya URL no es de ese bucket, y reemplaza `frameUrl` po
 prefirmada de corta duración. Así el bucket puede ser privado y el navegador no reutiliza
 imágenes borradas. Las personas sin ninguna imagen en el bucket no se muestran.
 
+## Reintento de un video fallido
+
+`POST /api/video-jobs/{jobId}/retry` vuelve a enviar a la cola un video que ya está en S3. Solo se aceptan trabajos en `FAILED` o `QUEUE_ERROR`; con otro estado responde 409 y si el trabajo no existe responde 404. El backend borra las apariciones del trabajo, vacía `failureReason`, `startedAt`, `completedAt`, `faceCount` y `lastWorkerEventAt`, publica el mismo mensaje `VIDEO_UPLOAD_READY` de la subida original y deja el trabajo en `QUEUED`. Si la publicación falla, el trabajo queda en `QUEUE_ERROR` y la respuesta es 503, igual que al subir un video. La respuesta es el `VideoJobResponse` actualizado.
+
+Un evento `VIDEO_PROCESSING_COMPLETED` del intento anterior puede llegar después del reintento. Se acepta sin lógica adicional: los rostros son los mismos del mismo video.
+
 ## Endpoints
 
 | Método y ruta | Uso |
@@ -173,6 +179,7 @@ imágenes borradas. Las personas sin ninguna imagen en el bucket no se muestran.
 | `GET /api/video-jobs/{jobId}` | Estado de un trabajo, con `failureReason` si falló |
 | `GET /api/metrics/video-jobs` | Métricas de procesamiento de los videos. Filtro opcional: `cameraId` |
 | `GET /api/metrics/activity` | Detecciones por hora del día y por cámara. Filtros opcionales: `cameraId`, `startDate`, `endDate` |
+| `POST /api/video-jobs/{jobId}/retry` | Reintenta un video fallido sin volver a subirlo. 404 si el trabajo no existe, 409 si su estado no es `FAILED` ni `QUEUE_ERROR`, 503 si no se puede publicar en SQS |
 | `POST /api/video-jobs/{jobId}/results` | Registra resultados a mano. El pipeline no lo usa: envía sus resultados por SQS |
 | `GET /api/face-appearances` | Apariciones de rostros con URL prefirmadas |
 | `GET /api/face-appearances/unique` | Apariciones agrupadas por `faceId`. Filtros: `startDate`, `endDate`, `hasReports`, `suspect` |

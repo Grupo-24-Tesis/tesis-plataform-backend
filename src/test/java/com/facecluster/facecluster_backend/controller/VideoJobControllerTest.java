@@ -19,6 +19,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -102,6 +103,36 @@ class VideoJobControllerTest {
                 .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Trabajo no encontrado"));
 
         mockMvc.perform(get("/api/video-jobs/missing/faces"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Trabajo no encontrado"));
+    }
+
+    @Test
+    void retryReturnsTheUpdatedJob() throws Exception {
+        when(videoJobService.retryJob("job-1")).thenReturn(response("job-1", "CAM-01"));
+
+        mockMvc.perform(post("/api/video-jobs/job-1/retry"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.jobId").value("job-1"));
+    }
+
+    @Test
+    void retryOfANonFailedJobIsConflict() throws Exception {
+        when(videoJobService.retryJob("job-1"))
+                .thenThrow(new ResponseStatusException(
+                        HttpStatus.CONFLICT, "Solo se pueden reintentar videos fallidos"));
+
+        mockMvc.perform(post("/api/video-jobs/job-1/retry"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("Solo se pueden reintentar videos fallidos"));
+    }
+
+    @Test
+    void retryOfAMissingJobIsNotFound() throws Exception {
+        when(videoJobService.retryJob("missing"))
+                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Trabajo no encontrado"));
+
+        mockMvc.perform(post("/api/video-jobs/missing/retry"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("Trabajo no encontrado"));
     }
