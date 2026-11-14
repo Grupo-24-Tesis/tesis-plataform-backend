@@ -11,6 +11,11 @@ public record VideoJobResponse(
         String status,
         Instant createdAt,
         Instant updatedAt,
-        String failureReason
+        String failureReason,
+        Instant startedAt,
+        Instant completedAt,
+        Integer faceCount,
+        Long queueWaitSeconds,
+        Long processingSeconds
 ) {
 }

@@ -48,6 +48,11 @@ class VideoJobControllerTest {
                 "COMPLETED",
                 Instant.parse("2026-11-14T12:00:00Z"),
                 Instant.parse("2026-11-14T12:05:00Z"),
+                null,
+                null,
+                null,
+                null,
+                null,
                 null
         );
     }

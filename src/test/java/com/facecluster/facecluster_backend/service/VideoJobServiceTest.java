@@ -437,6 +437,80 @@ class VideoJobServiceTest {
     }
 
     @Test
+    void startedEventSetsStartedAtOnlyTheFirstTime() {
+        VideoJob job = storedJob(VideoJobStatus.QUEUED);
+
+        service.applyWorkerEvent(started(NOW));
+        service.applyWorkerEvent(started(NOW.plusSeconds(30)));
+
+        assertThat(job.getStartedAt()).isEqualTo(NOW);
+        assertThat(job.getLastWorkerEventAt()).isEqualTo(NOW.plusSeconds(30));
+    }
+
+    @Test
+    void failedEventKeepsStartedAt() {
+        VideoJob job = storedJob(VideoJobStatus.PROCESSING);
+        job.setStartedAt(NOW);
+
+        service.applyWorkerEvent(failed(NOW.plusSeconds(10), "error"));
+
+        assertThat(job.getStatus()).isEqualTo(VideoJobStatus.FAILED);
+        assertThat(job.getStartedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void completedEventStoresCompletedAtAndFaceCount() {
+        VideoJob job = storedJob(VideoJobStatus.PROCESSING);
+
+        service.applyWorkerEvent(completed(NOW, List.of(
+                new FaceAppearanceResult("job-1_1", "00:00:01", "url", null),
+                new FaceAppearanceResult("job-1_2", "00:00:02", "url", null)
+        )));
+
+        assertThat(job.getCompletedAt()).isEqualTo(NOW);
+        assertThat(job.getFaceCount()).isEqualTo(2);
+    }
+
+    @Test
+    void completedEventWithoutSentAtUsesTheClock() {
+        VideoJob job = storedJob(VideoJobStatus.PROCESSING);
+        Instant before = Instant.now();
+
+        service.applyWorkerEvent(completed(null, List.of()));
+
+        assertThat(job.getCompletedAt()).isBetween(before, Instant.now());
+        assertThat(job.getFaceCount()).isZero();
+    }
+
+    @Test
+    void jobResponseIncludesDerivedSeconds() {
+        VideoJob job = storedJob(VideoJobStatus.COMPLETED);
+        job.setCreatedAt(NOW);
+        job.setStartedAt(NOW.plusSeconds(12));
+        job.setCompletedAt(NOW.plusSeconds(92));
+        job.setFaceCount(3);
+
+        VideoJobResponse response = service.getJobById("job-1");
+
+        assertThat(response.startedAt()).isEqualTo(NOW.plusSeconds(12));
+        assertThat(response.completedAt()).isEqualTo(NOW.plusSeconds(92));
+        assertThat(response.faceCount()).isEqualTo(3);
+        assertThat(response.queueWaitSeconds()).isEqualTo(12L);
+        assertThat(response.processingSeconds()).isEqualTo(80L);
+    }
+
+    @Test
+    void jobResponseLeavesSecondsEmptyForOldJobs() {
+        storedJob(VideoJobStatus.COMPLETED);
+
+        VideoJobResponse response = service.getJobById("job-1");
+
+        assertThat(response.queueWaitSeconds()).isNull();
+        assertThat(response.processingSeconds()).isNull();
+        assertThat(response.faceCount()).isNull();
+    }
+
+    @Test
     void registerRejectsAnotherBucket() {
         VideoUploadedRequest request =
                 new VideoUploadedRequest("video.mp4", "otro", "videos/video.mp4", "CAM-01");

@@ -171,6 +171,7 @@ imágenes borradas. Las personas sin ninguna imagen en el bucket no se muestran.
 | `GET /api/video-jobs` | Lista los trabajos, del más reciente al más antiguo. Filtro opcional: `cameraId` |
 | `GET /api/video-jobs/{jobId}/faces` | Rostros de un trabajo con URL prefirmadas. 404 si el trabajo no existe |
 | `GET /api/video-jobs/{jobId}` | Estado de un trabajo, con `failureReason` si falló |
+| `GET /api/metrics/video-jobs` | Métricas de procesamiento de los videos. Filtro opcional: `cameraId` |
 | `POST /api/video-jobs/{jobId}/results` | Registra resultados a mano. El pipeline no lo usa: envía sus resultados por SQS |
 | `GET /api/face-appearances` | Apariciones de rostros con URL prefirmadas |
 | `GET /api/face-appearances/unique` | Apariciones agrupadas por `faceId`. Filtros: `startDate`, `endDate`, `hasReports`, `suspect` |
@@ -186,13 +187,33 @@ Las marcas son únicas por `faceId`. Al arrancar, `MarkedIndexInitializer` elimi
 `faceId` tiene la forma `<jobId>_<trackId>`: identifica a una persona dentro de un video.
 No hay reconocimiento de la misma persona entre videos.
 
+## Métricas de procesamiento
+
+Cada trabajo guarda `startedAt` (la primera vez que pasa a `PROCESSING`, con el `sentAt` del evento; los `STARTED` posteriores no lo cambian), `completedAt` (el `sentAt` del evento `COMPLETED`, o la hora del reloj si no lo trae) y `faceCount` (detecciones guardadas al completarse). Un trabajo que falla conserva su `startedAt`. Los trabajos antiguos sin estos campos siguen funcionando: los nulos se omiten en los promedios.
+
+`GET /api/video-jobs` y `GET /api/video-jobs/{jobId}` añaden a cada trabajo `startedAt`, `completedAt`, `faceCount`, `queueWaitSeconds` (`startedAt` menos `createdAt`, nulo si no ha empezado) y `processingSeconds` (`completedAt` menos `startedAt`, nulo si no ha terminado). Los segundos son enteros.
+
+`GET /api/metrics/video-jobs?cameraId=` (la cámara es opcional) responde:
+
+| Campo | Cálculo |
+| --- | --- |
+| `total` | Trabajos considerados |
+| `completed` | Trabajos en `COMPLETED` |
+| `failed` | Trabajos en `FAILED` o `QUEUE_ERROR` |
+| `inProgress` | Trabajos en `UPLOADED`, `QUEUED` o `PROCESSING` |
+| `failureRate` | `failed / (completed + failed)`, entre 0 y 1; 0 si ambos son 0 |
+| `averageQueueWaitSeconds` | Promedio de `queueWaitSeconds` de los trabajos que lo tienen; nulo si ninguno |
+| `averageProcessingSeconds` | Promedio de `processingSeconds` de los trabajos que lo tienen; nulo si ninguno |
+| `totalFaces` | Suma de `faceCount` de los trabajos completados |
+| `averageFacesPerVideo` | Promedio de `faceCount` de los trabajos completados que lo tienen; nulo si ninguno |
+
 ## Estructura
 
 | Paquete | Contenido |
 | --- | --- |
 | `api` | Salud, formato de error (`ApiExceptionHandler`) y lectura de filtros de fecha |
 | `controller` | Controladores REST |
-| `service` | Lógica de trabajos, carga a S3, imágenes de rostros y revisión de trabajos sin respuesta |
+| `service` | Lógica de trabajos, métricas de procesamiento, carga a S3, imágenes de rostros y revisión de trabajos sin respuesta |
 | `messaging` | Publicación de trabajos y lectura de resultados en SQS |
 | `repository` | Repositorios de Spring Data MongoDB |
 | `domain`, `dto` | Documentos de MongoDB y objetos de entrada y salida |

@@ -3,6 +3,7 @@ package com.facecluster.facecluster_backend.domain;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.time.Duration;
 import java.time.Instant;
 
 @Document(collection = "video_jobs")
@@ -22,6 +23,9 @@ public class VideoJob {
     private Instant createdAt;
     private Instant updatedAt;
     private Instant lastWorkerEventAt;
+    private Instant startedAt;
+    private Instant completedAt;
+    private Integer faceCount;
 
     public VideoJob() {
     }
@@ -104,5 +108,45 @@ public class VideoJob {
 
     public void setLastWorkerEventAt(Instant lastWorkerEventAt) {
         this.lastWorkerEventAt = lastWorkerEventAt;
+    }
+
+    public Instant getStartedAt() {
+        return startedAt;
+    }
+
+    public void setStartedAt(Instant startedAt) {
+        this.startedAt = startedAt;
+    }
+
+    public Instant getCompletedAt() {
+        return completedAt;
+    }
+
+    public void setCompletedAt(Instant completedAt) {
+        this.completedAt = completedAt;
+    }
+
+    public Integer getFaceCount() {
+        return faceCount;
+    }
+
+    public void setFaceCount(Integer faceCount) {
+        this.faceCount = faceCount;
+    }
+
+    public Long queueWaitSeconds() {
+        return secondsBetween(createdAt, startedAt);
+    }
+
+    public Long processingSeconds() {
+        return secondsBetween(startedAt, completedAt);
+    }
+
+    private static Long secondsBetween(Instant from, Instant to) {
+        if (from == null || to == null) {
+            return null;
+        }
+
+        return Duration.between(from, to).getSeconds();
     }
 }

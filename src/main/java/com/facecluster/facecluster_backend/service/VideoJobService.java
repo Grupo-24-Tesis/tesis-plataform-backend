@@ -147,7 +147,7 @@ public class VideoJobService {
         VideoJob job = findJob(jobId);
 
         try {
-            completeJob(job, request == null ? null : request.appearances());
+            completeJob(job, request == null ? null : request.appearances(), null);
         } catch (InvalidWorkerEventException exception) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
@@ -174,7 +174,8 @@ public class VideoJobService {
         switch (event.eventType()) {
             case VideoProcessingEvent.STARTED -> markProcessing(job, sentAt);
             case VideoProcessingEvent.FAILED -> markFailed(job, event.reason(), sentAt);
-            case VideoProcessingEvent.COMPLETED -> completeJob(job, event.appearances());
+            case VideoProcessingEvent.COMPLETED ->
+                    completeJob(job, event.appearances(), event.sentAt());
             default -> throw new InvalidWorkerEventException(
                     "eventType desconocido: " + event.eventType()
             );
@@ -238,6 +239,11 @@ public class VideoJobService {
 
         job.setStatus(VideoJobStatus.PROCESSING);
         job.setFailureReason(null);
+
+        if (job.getStartedAt() == null) {
+            job.setStartedAt(sentAt);
+        }
+
         job.setLastWorkerEventAt(sentAt);
         job.setUpdatedAt(Instant.now());
 
@@ -259,7 +265,11 @@ public class VideoJobService {
         videoJobRepository.save(job);
     }
 
-    private void completeJob(VideoJob job, List<FaceAppearanceResult> results) {
+    private void completeJob(
+            VideoJob job,
+            List<FaceAppearanceResult> results,
+            Instant sentAt
+    ) {
         if (results == null) {
             throw new InvalidWorkerEventException(
                     "La lista de apariciones es obligatoria"
@@ -313,6 +323,8 @@ public class VideoJobService {
 
         job.setStatus(VideoJobStatus.COMPLETED);
         job.setFailureReason(null);
+        job.setCompletedAt(sentAt != null ? sentAt : Instant.now(clock));
+        job.setFaceCount(appearances.size());
         job.setUpdatedAt(Instant.now());
 
         videoJobRepository.save(job);
@@ -406,7 +418,12 @@ public class VideoJobService {
                 job.getStatus(),
                 job.getCreatedAt(),
                 job.getUpdatedAt(),
-                job.getFailureReason()
+                job.getFailureReason(),
+                job.getStartedAt(),
+                job.getCompletedAt(),
+                job.getFaceCount(),
+                job.queueWaitSeconds(),
+                job.processingSeconds()
         );
     }
 
