@@ -34,6 +34,7 @@ archivo `.env` en la raíz del repositorio. Ese archivo nunca se sube a git.
 | `MONGO_ROOT_USER`, `MONGO_ROOT_PASS` | Usuario administrador de MongoDB |
 | `MONGO_APP_DB` | Base de datos de la aplicación |
 | `MONGO_APP_USER`, `MONGO_APP_PASS` | Usuario con el que se conecta el backend |
+| `APP_TIME_ZONE` | Zona horaria de toda la aplicación (`America/Bogota` por defecto). Un solo `Clock` la usa para `createdAt` de los reportes y para convertir `capturedAt` de los rostros |
 | `AWS_REGION` | Región de S3 y SQS |
 | `AWS_S3_BUCKET` | Bucket de los videos y de los rostros |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Credenciales de AWS |
@@ -64,7 +65,7 @@ Levanta dos contenedores:
 
 | Servicio | Puerto | Contenido |
 | --- | --- | --- |
-| `mongodb` | 127.0.0.1:27017 | MongoDB con los datos iniciales de `docker/mongo/init` (vigilantes, cámaras y reportes de ejemplo, sin rostros asociados) |
+| `mongodb` | 127.0.0.1:27017 | MongoDB con los datos iniciales de `docker/mongo/init` (tres vigilantes, las cámaras `CAM-01` a `CAM-03` y dos reportes de ejemplo, sin rostros ni marcas) |
 | `backend` | 127.0.0.1:8080 | La API |
 
 Comprobación:
@@ -78,26 +79,30 @@ servicio en `docker-compose.yml`. Por eso el backend se ejecuta dentro de compos
 
 CORS solo admite el origen `http://localhost:4200` (`CorsConfig`).
 
+Los puertos se publican solo en `127.0.0.1`. Las variables de `docker-compose.yml` usan la forma `${VAR:-valor}`, así que las de AWS y de tiempos de espera tienen valor por defecto si no están en `.env`.
+
 ## Flujo de un video
 
 1. `POST /api/videos/upload-url` devuelve una URL prefirmada de S3 para subir el video a
    `videos/<uuid>.<extensión>`. Solo se aceptan archivos con `contentType` de video.
 2. El navegador sube el archivo a S3 con esa URL.
-3. `POST /api/videos` registra el video como un `VideoJob` y publica en SQS un mensaje
+3. `POST /api/videos` valida la petición y registra el video como un `VideoJob`. Exige `originalFileName`, `bucket` igual al configurado, `objectKey` que empiece por `videos/` y no contenga `..`, y un `cameraId` que exista; si algo falla responde 400. Después publica en SQS un mensaje
    `VIDEO_UPLOAD_READY` con `jobId`, `bucket`, `objectKey`, `cameraId`,
    `originalFileName`, `contentType` y `createdAt`.
 4. El worker del pipeline toma el mensaje, procesa el video, sube a S3 el mejor rostro de
    cada persona y publica eventos en la cola de resultados.
 5. `SqsVideoResultListener` consulta esa cola y aplica cada evento. Con
-   `VIDEO_PROCESSING_COMPLETED` guarda una `FaceAppearance` por rostro. El `cameraId` de
-   cada aparición se toma del `VideoJob`, no del pipeline.
+   `VIDEO_PROCESSING_COMPLETED` guarda una `FaceAppearance` por rostro, con `_id` igual a
+   `faceId` y el `jobId` del trabajo. El `cameraId` de cada aparición se toma del
+   `VideoJob`, no del pipeline. `capturedAt` debe ser una fecha ISO-8601 con desfase y se
+   convierte a la zona de `APP_TIME_ZONE`.
 
 Eventos de la cola de resultados:
 
 | `eventType` | Efecto en el `VideoJob` |
 | --- | --- |
 | `VIDEO_PROCESSING_STARTED` | Pasa a `PROCESSING`. El worker lo repite cada 120 s mientras procesa |
-| `VIDEO_PROCESSING_COMPLETED` | Se guardan los rostros de `appearances` y pasa a `COMPLETED` |
+| `VIDEO_PROCESSING_COMPLETED` | Se guardan los rostros de `appearances` y pasa a `COMPLETED`. Sin `appearances` el evento es inválido |
 | `VIDEO_PROCESSING_FAILED` | Pasa a `FAILED` y `reason` queda en `failureReason` |
 
 Todos llevan `eventVersion`, `jobId` y `sentAt`. Un mensaje que no es un evento válido o
@@ -125,8 +130,9 @@ y pasa a `FAILED` los trabajos que llevan en `UPLOADED` más de
 `VIDEO_JOB_PROCESSING_TIMEOUT_MINUTES` sin un evento nuevo.
 
 Si el mensaje se publicó en SQS pero falla el guardado del estado `QUEUED`, el trabajo no
-pasa a `QUEUE_ERROR`: `POST /api/videos` responde 500 y los eventos del worker siguen
-moviendo el trabajo.
+pasa a `QUEUE_ERROR`: `POST /api/videos` responde 500 y el trabajo queda en `UPLOADED`. Los eventos del worker
+lo mueven de ahí; si no llega ninguno, el límite de `UPLOADED` lo pasa a `FAILED`, y un
+evento posterior del worker puede revivirlo.
 
 Los eventos pueden llegar repetidos o desordenados:
 
@@ -135,6 +141,12 @@ Los eventos pueden llegar repetidos o desordenados:
 - Un trabajo `FAILED` pasa a `COMPLETED` si después llegan sus resultados, y vuelve a
   `PROCESSING` si el worker reporta avance con un `sentAt` estrictamente posterior al
   último evento. Un `sentAt` igual o anterior se ignora.
+
+## Errores
+
+Los errores se responden como JSON con la forma `{"status": 400, "message": "..."}`, que arma `ApiExceptionHandler`. Cubre los errores de validación, los parámetros con valor inválido, los cuerpos que no se pueden leer (400) y los registros duplicados (409).
+
+Los filtros de fecha (`startDate`, `endDate`, `date`) usan el formato `AAAA-MM-DD`. Aceptan un solo extremo, y una fecha inválida o un `startDate` posterior a `endDate` responde 400.
 
 ## Imágenes de rostros
 
@@ -160,12 +172,16 @@ imágenes borradas. Las personas sin ninguna imagen en el bucket no se muestran.
 | `GET /api/video-jobs/{jobId}/faces` | Rostros de un trabajo con URL prefirmadas. 404 si el trabajo no existe |
 | `GET /api/video-jobs/{jobId}` | Estado de un trabajo, con `failureReason` si falló |
 | `POST /api/video-jobs/{jobId}/results` | Registra resultados a mano. El pipeline no lo usa: envía sus resultados por SQS |
-| `GET /api/face-appearances` | Apariciones de rostros |
+| `GET /api/face-appearances` | Apariciones de rostros con URL prefirmadas |
 | `GET /api/face-appearances/unique` | Apariciones agrupadas por `faceId`. Filtros: `startDate`, `endDate`, `hasReports`, `suspect` |
 | `GET /api/reports`, `POST /api/reports` | Reportes de incidentes |
-| `GET /api/reports/filter` | Filtros: `status`, `date`, `startDate`, `endDate`, `dateType` |
-| `PUT /api/reports/{id}/status` | Cambia el estado de un reporte |
-| `GET /api/marked`, `POST /api/marked`, `DELETE /api/marked/{id}` | Personas marcadas |
+| `GET /api/reports/filter` | Filtros: `status`, `date`, `startDate`, `endDate`, `dateType`. Con `dateType=resolucion` filtra por `resolvedAt`; en otro caso, por `incidentDate` |
+| `PUT /api/reports/{id}/status` | Cambia el estado de un reporte. 404 si no existe |
+| `GET /api/marked`, `POST /api/marked`, `DELETE /api/marked/{id}` | Detecciones marcadas. `POST` exige `faceId` (400) y responde 409 si ya está marcada |
+
+Los reportes tienen dos estados, `investigacion` y `solucionado`; otro valor responde 400. Un reporte `solucionado` exige `resolvedAt` al crearse; si el estado no es `solucionado`, se vacían `resolvedAt` y `resolutionDescription`. `createdAt` lo pone el servidor.
+
+Las marcas son únicas por `faceId`. Al arrancar, `MarkedIndexInitializer` elimina las marcas duplicadas, conserva la más antigua de cada `faceId` y crea el índice único.
 
 `faceId` tiene la forma `<jobId>_<trackId>`: identifica a una persona dentro de un video.
 No hay reconocimiento de la misma persona entre videos.
@@ -174,12 +190,13 @@ No hay reconocimiento de la misma persona entre videos.
 
 | Paquete | Contenido |
 | --- | --- |
-| `api`, `controller` | Controladores REST |
+| `api` | Salud, formato de error (`ApiExceptionHandler`) y lectura de filtros de fecha |
+| `controller` | Controladores REST |
 | `service` | Lógica de trabajos, carga a S3, imágenes de rostros y revisión de trabajos sin respuesta |
 | `messaging` | Publicación de trabajos y lectura de resultados en SQS |
 | `repository` | Repositorios de Spring Data MongoDB |
 | `domain`, `dto` | Documentos de MongoDB y objetos de entrada y salida |
-| `config` | Clientes de AWS, CORS y tareas programadas |
+| `config` | Clientes de AWS, CORS, `Clock`, tareas programadas e índice único de marcas |
 
 Colecciones de MongoDB: `video_jobs`, `face_appearances`, `guards`, `cameras`, `reports`
 y `marked`.
@@ -193,3 +210,8 @@ mvn test
 Ejecuta todas las pruebas, incluida `contextLoads`, que arranca el contexto completo de
 Spring con `src/test/resources/application.properties`. No necesitan MongoDB ni AWS, pero
 sí Java 21.
+
+## Limitaciones conocidas
+
+- No hay autenticación. La selección de vigilante del frontend no es un inicio de sesión, y cualquier cliente que llegue al puerto del backend puede usar la API. Por eso `docker-compose.yml` publica los puertos solo en `127.0.0.1`.
+- La identidad es por video. El `faceId` es `<jobId>_<trackId>`: el sistema no reconoce a la misma persona en videos distintos y no identifica a las personas.
