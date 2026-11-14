@@ -141,10 +141,12 @@ Los eventos pueden llegar repetidos o desordenados:
 - Un trabajo `FAILED` pasa a `COMPLETED` si después llegan sus resultados, y vuelve a
   `PROCESSING` si el worker reporta avance con un `sentAt` estrictamente posterior al
   último evento. Un `sentAt` igual o anterior se ignora.
+- Un evento `FAILED` con un `sentAt` igual o anterior al último evento del worker también se
+  ignora, así que un fallo repetido de un intento anterior no deshace un reintento.
 
 ## Errores
 
-Los errores se responden como JSON con la forma `{"status": 400, "message": "..."}`, que arma `ApiExceptionHandler`. Cubre los errores de validación, los parámetros con valor inválido, los cuerpos que no se pueden leer (400) y los registros duplicados (409).
+Los errores se responden como JSON con la forma `{"status": 400, "message": "..."}`, que arma `ApiExceptionHandler`. Cubre los errores de validación, los parámetros obligatorios que faltan, los parámetros con valor inválido, los cuerpos que no se pueden leer (400) y los registros duplicados (409).
 
 Los filtros de fecha (`startDate`, `endDate`, `date`) usan el formato `AAAA-MM-DD`. Aceptan un solo extremo, y una fecha inválida o un `startDate` posterior a `endDate` responde 400.
 
@@ -161,7 +163,7 @@ imágenes borradas. Las personas sin ninguna imagen en el bucket no se muestran.
 
 ## Reintento de un video fallido
 
-`POST /api/video-jobs/{jobId}/retry` vuelve a enviar a la cola un video que ya está en S3. Solo se aceptan trabajos en `FAILED` o `QUEUE_ERROR`; con otro estado responde 409 y si el trabajo no existe responde 404. El backend borra las apariciones del trabajo, vacía `failureReason`, `startedAt`, `completedAt`, `faceCount` y `lastWorkerEventAt`, publica el mismo mensaje `VIDEO_UPLOAD_READY` de la subida original y deja el trabajo en `QUEUED`. Si la publicación falla, el trabajo queda en `QUEUE_ERROR` y la respuesta es 503, igual que al subir un video; en ese caso el trabajo queda en `QUEUE_ERROR` sin rostros y se puede reintentar de nuevo. La respuesta es el `VideoJobResponse` actualizado.
+`POST /api/video-jobs/{jobId}/retry` vuelve a enviar a la cola un video que ya está en S3. Solo se aceptan trabajos en `FAILED` o `QUEUE_ERROR`; con otro estado responde 409 y si el trabajo no existe responde 404. El backend borra las apariciones del trabajo, vacía `failureReason`, `startedAt`, `completedAt` y `faceCount`, pone `lastWorkerEventAt` en la hora del reintento para que los eventos `STARTED` y `FAILED` repetidos del intento anterior se ignoren, publica el mismo mensaje `VIDEO_UPLOAD_READY` de la subida original y deja el trabajo en `QUEUED`. Si la publicación falla, el trabajo queda en `QUEUE_ERROR` y la respuesta es 503, igual que al subir un video; en ese caso el trabajo queda en `QUEUE_ERROR` sin rostros y se puede reintentar de nuevo. La respuesta es el `VideoJobResponse` actualizado.
 
 Un evento `VIDEO_PROCESSING_COMPLETED` del intento anterior puede llegar después del reintento. Se acepta sin lógica adicional: los rostros son los mismos del mismo video.
 
@@ -199,9 +201,9 @@ No hay reconocimiento de la misma persona entre videos.
 
 ## Métricas de procesamiento
 
-Cada trabajo guarda `startedAt` (la primera vez que pasa a `PROCESSING`, con el `sentAt` del evento; los `STARTED` posteriores no lo cambian), `completedAt` (el `sentAt` del evento `COMPLETED`, o la hora del reloj si no lo trae) y `faceCount` (detecciones guardadas al completarse). Un trabajo que falla conserva su `startedAt`. Los trabajos antiguos sin estos campos siguen funcionando: los nulos se omiten en los promedios.
+Cada trabajo guarda `startedAt` (la primera vez que pasa a `PROCESSING`, con el `sentAt` del evento; los `STARTED` posteriores no lo cambian), `completedAt` (el `sentAt` del evento `COMPLETED`, o la hora del reloj si no lo trae) y `faceCount` (detecciones guardadas al completarse). Un trabajo que falla conserva su `startedAt`. Al publicarse en la cola, en la subida y en cada reintento, se guarda `queuedAt`. Los trabajos antiguos sin estos campos siguen funcionando: los nulos se omiten en los promedios. Al arrancar, `FaceCountInitializer` completa el `faceCount` de los trabajos `COMPLETED` que no lo tienen contando sus detecciones por `jobId`, después de que `FaceJobIdInitializer` complete el `jobId` de las detecciones antiguas.
 
-`GET /api/video-jobs` y `GET /api/video-jobs/{jobId}` añaden a cada trabajo `startedAt`, `completedAt`, `faceCount`, `queueWaitSeconds` (`startedAt` menos `createdAt`, nulo si no ha empezado) y `processingSeconds` (`completedAt` menos `startedAt`, nulo si no ha terminado). Los segundos son enteros.
+`GET /api/video-jobs` y `GET /api/video-jobs/{jobId}` añaden a cada trabajo `startedAt`, `completedAt`, `faceCount`, `queueWaitSeconds` (`startedAt` menos `queuedAt`, o menos `createdAt` en los trabajos antiguos sin `queuedAt`; nulo si no ha empezado) y `processingSeconds` (`completedAt` menos `startedAt`, nulo si no ha terminado). Los segundos son enteros.
 
 `GET /api/metrics/video-jobs?cameraId=` (la cámara es opcional) responde:
 
@@ -211,8 +213,8 @@ Cada trabajo guarda `startedAt` (la primera vez que pasa a `PROCESSING`, con el 
 | `completed` | Trabajos en `COMPLETED` |
 | `failed` | Trabajos en `FAILED` o `QUEUE_ERROR` |
 | `inProgress` | Trabajos en `UPLOADED`, `QUEUED` o `PROCESSING` |
-| `failureRate` | `failed / (completed + failed)`, entre 0 y 1; 0 si ambos son 0 |
-| `averageQueueWaitSeconds` | Promedio de `queueWaitSeconds` de los trabajos que lo tienen; nulo si ninguno |
+| `failureRate` | `failed / (completed + failed)`, entre 0 y 1; 0 si ambos son 0. Mide el último intento de cada video: un trabajo reintentado que luego se completa ya no cuenta como fallido |
+| `averageQueueWaitSeconds` | Promedio de `queueWaitSeconds` de los trabajos que lo tienen; en un reintento se mide desde el reintento, no desde la subida original; nulo si ninguno |
 | `averageProcessingSeconds` | Promedio de `processingSeconds` de los trabajos que lo tienen; nulo si ninguno |
 | `totalFaces` | Suma de `faceCount` de los trabajos completados |
 | `averageFacesPerVideo` | Promedio de `faceCount` de los trabajos completados que lo tienen; nulo si ninguno |
