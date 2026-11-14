@@ -99,6 +99,15 @@ class FaceAppearanceControllerTest {
     }
 
     @Test
+    void byIdsWithoutFaceIdsAnswersJsonBadRequestInSpanish() throws Exception {
+        byIdsMockMvc(mock(FaceAppearanceRepository.class), mock(FaceImageService.class))
+                .perform(get("/api/face-appearances/by-ids"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value("Falta el parámetro obligatorio faceIds"));
+    }
+
+    @Test
     void byIdsAcceptsExactlyFiftyIds() throws Exception {
         FaceAppearanceRepository repository = mock(FaceAppearanceRepository.class);
         FaceImageService faceImageService = mock(FaceImageService.class);
