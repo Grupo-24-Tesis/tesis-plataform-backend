@@ -13,6 +13,8 @@ import com.facecluster.facecluster_backend.messaging.VideoProcessingEvent;
 import com.facecluster.facecluster_backend.messaging.VideoProcessingMessage;
 import com.facecluster.facecluster_backend.repository.FaceAppearanceRepository;
 import com.facecluster.facecluster_backend.repository.VideoJobRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -28,9 +30,12 @@ import java.util.List;
 @Service
 public class VideoJobService {
 
+    private static final Logger log = LoggerFactory.getLogger(VideoJobService.class);
+
     private final VideoJobRepository videoJobRepository;
     private final FaceAppearanceRepository faceAppearanceRepository;
     private final SqsVideoJobPublisher sqsVideoJobPublisher;
+    private final long uploadedTimeoutMinutes;
     private final long queuedTimeoutMinutes;
     private final long processingTimeoutMinutes;
 
@@ -38,12 +43,14 @@ public class VideoJobService {
             VideoJobRepository videoJobRepository,
             FaceAppearanceRepository faceAppearanceRepository,
             SqsVideoJobPublisher sqsVideoJobPublisher,
+            @Value("${video-jobs.uploaded-timeout-minutes}") long uploadedTimeoutMinutes,
             @Value("${video-jobs.queued-timeout-minutes}") long queuedTimeoutMinutes,
             @Value("${video-jobs.processing-timeout-minutes}") long processingTimeoutMinutes
     ) {
         this.videoJobRepository = videoJobRepository;
         this.faceAppearanceRepository = faceAppearanceRepository;
         this.sqsVideoJobPublisher = sqsVideoJobPublisher;
+        this.uploadedTimeoutMinutes = uploadedTimeoutMinutes;
         this.queuedTimeoutMinutes = queuedTimeoutMinutes;
         this.processingTimeoutMinutes = processingTimeoutMinutes;
     }
@@ -78,12 +85,6 @@ public class VideoJobService {
 
         try {
             sqsVideoJobPublisher.publish(message);
-
-            savedJob.setStatus(VideoJobStatus.QUEUED);
-            savedJob.setUpdatedAt(Instant.now());
-
-            savedJob = videoJobRepository.save(savedJob);
-
         } catch (RuntimeException exception) {
             savedJob.setStatus(VideoJobStatus.QUEUE_ERROR);
             savedJob.setUpdatedAt(Instant.now());
@@ -93,6 +94,25 @@ public class VideoJobService {
             throw new ResponseStatusException(
                     HttpStatus.SERVICE_UNAVAILABLE,
                     "El video se guardó, pero no pudo enviarse a la cola SQS",
+                    exception
+            );
+        }
+
+        try {
+            savedJob.setStatus(VideoJobStatus.QUEUED);
+            savedJob.setUpdatedAt(Instant.now());
+
+            savedJob = videoJobRepository.save(savedJob);
+        } catch (RuntimeException exception) {
+            log.error(
+                    "El mensaje del job {} se envió a la cola, pero no se pudo guardar el estado QUEUED",
+                    savedJob.getId(),
+                    exception
+            );
+
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "El video se envio a la cola, pero no se pudo actualizar su estado",
                     exception
             );
         }
@@ -144,6 +164,13 @@ public class VideoJobService {
 
     public int failStaleJobs(Instant now) {
         int failed = 0;
+
+        failed += failJobsWithoutResponse(
+                VideoJobStatus.UPLOADED,
+                uploadedTimeoutMinutes,
+                "El video no se pudo enviar a la cola en " + uploadedTimeoutMinutes + " minutos",
+                now
+        );
 
         failed += failJobsWithoutResponse(
                 VideoJobStatus.QUEUED,
@@ -266,7 +293,7 @@ public class VideoJobService {
 
     private boolean isOutdated(VideoJob job, Instant sentAt) {
         return job.getLastWorkerEventAt() != null
-                && sentAt.isBefore(job.getLastWorkerEventAt());
+                && !sentAt.isAfter(job.getLastWorkerEventAt());
     }
 
     private VideoJob findJob(String jobId) {

@@ -41,6 +41,7 @@ archivo `.env` en la raíz del repositorio. Ese archivo nunca se sube a git.
 | `AWS_S3_FACES_PREFIX` | Carpeta del bucket donde el pipeline sube los rostros (`faces/` por defecto) |
 | `AWS_SQS_QUEUE_URL` | Cola donde se publican los trabajos |
 | `AWS_SQS_RESULTS_QUEUE_URL` | Cola donde el pipeline publica el avance, los resultados y los fallos. Sin ella el backend arranca, pero no recibe resultados |
+| `VIDEO_JOB_UPLOADED_TIMEOUT_MINUTES` | Minutos que un trabajo puede quedarse sin enviarse a la cola antes de darse por fallido (5 por defecto) |
 | `VIDEO_JOB_QUEUED_TIMEOUT_MINUTES` | Minutos que un trabajo puede esperar en la cola antes de darse por fallido (720 por defecto) |
 | `VIDEO_JOB_PROCESSING_TIMEOUT_MINUTES` | Minutos sin avance del pipeline antes de dar por fallido un trabajo en curso (15 por defecto) |
 
@@ -101,30 +102,39 @@ Eventos de la cola de resultados:
 
 Todos llevan `eventVersion`, `jobId` y `sentAt`. Un mensaje que no es un evento válido o
 que nombra un trabajo inexistente se borra de la cola. Si el evento no se puede aplicar
-por un error del backend, el mensaje queda en la cola y se vuelve a intentar.
+por un error del backend, el mensaje queda en la cola y se vuelve a intentar. El
+backend lee `ApproximateReceiveCount` y, cuando el mensaje llega a
+`video-jobs.results-max-receives` recepciones (5 por defecto), registra el error con el
+`jobId` y el `eventType` y lo borra de la cola. Esa propiedad no tiene variable de entorno.
 
 Estados de un `VideoJob`:
 
 | Estado | Significado |
 | --- | --- |
-| `UPLOADED` | El video quedó registrado |
+| `UPLOADED` | El video quedó registrado y todavía no se publicó en SQS |
 | `QUEUED` | El mensaje se publicó en SQS |
-| `QUEUE_ERROR` | No se pudo publicar el mensaje |
+| `QUEUE_ERROR` | No se pudo publicar el mensaje. `POST /api/videos` responde 503 |
 | `PROCESSING` | El pipeline está procesando el video |
 | `COMPLETED` | Se recibieron los resultados del pipeline |
 | `FAILED` | El pipeline no pudo procesar el video o dejó de responder. El motivo queda en `failureReason` |
 
 Ningún trabajo se queda esperando para siempre. `StaleVideoJobMonitor` revisa cada minuto
-y pasa a `FAILED` los trabajos que llevan en `QUEUED` más de
+y pasa a `FAILED` los trabajos que llevan en `UPLOADED` más de
+`VIDEO_JOB_UPLOADED_TIMEOUT_MINUTES`, los que llevan en `QUEUED` más de
 `VIDEO_JOB_QUEUED_TIMEOUT_MINUTES` y los que llevan en `PROCESSING` más de
 `VIDEO_JOB_PROCESSING_TIMEOUT_MINUTES` sin un evento nuevo.
+
+Si el mensaje se publicó en SQS pero falla el guardado del estado `QUEUED`, el trabajo no
+pasa a `QUEUE_ERROR`: `POST /api/videos` responde 500 y los eventos del worker siguen
+moviendo el trabajo.
 
 Los eventos pueden llegar repetidos o desordenados:
 
 - Un trabajo `COMPLETED` no cambia con ningún evento posterior, así que los rostros no se
   guardan dos veces.
 - Un trabajo `FAILED` pasa a `COMPLETED` si después llegan sus resultados, y vuelve a
-  `PROCESSING` si el worker reporta avance con un `sentAt` posterior al último evento.
+  `PROCESSING` si el worker reporta avance con un `sentAt` estrictamente posterior al
+  último evento. Un `sentAt` igual o anterior se ignora.
 
 ## Imágenes de rostros
 

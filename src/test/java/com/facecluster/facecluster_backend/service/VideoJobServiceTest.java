@@ -5,6 +5,7 @@ import com.facecluster.facecluster_backend.domain.VideoJob;
 import com.facecluster.facecluster_backend.domain.VideoJobStatus;
 import com.facecluster.facecluster_backend.dto.VideoJobResponse;
 import com.facecluster.facecluster_backend.dto.VideoResultRequest;
+import com.facecluster.facecluster_backend.dto.VideoUploadedRequest;
 import com.facecluster.facecluster_backend.dto.VideoResultRequest.FaceAppearanceResult;
 import com.facecluster.facecluster_backend.messaging.InvalidWorkerEventException;
 import com.facecluster.facecluster_backend.messaging.SqsVideoJobPublisher;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
@@ -28,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -36,6 +39,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class VideoJobServiceTest {
 
+    private static final long UPLOADED_TIMEOUT_MINUTES = 5;
     private static final long QUEUED_TIMEOUT_MINUTES = 720;
     private static final long PROCESSING_TIMEOUT_MINUTES = 15;
     private static final Instant NOW = Instant.parse("2026-11-14T12:00:00Z");
@@ -57,6 +61,7 @@ class VideoJobServiceTest {
                 videoJobRepository,
                 faceAppearanceRepository,
                 sqsVideoJobPublisher,
+                UPLOADED_TIMEOUT_MINUTES,
                 QUEUED_TIMEOUT_MINUTES,
                 PROCESSING_TIMEOUT_MINUTES
         );
@@ -100,6 +105,17 @@ class VideoJobServiceTest {
         job.setLastWorkerEventAt(NOW);
 
         service.applyWorkerEvent(started(NOW.minusSeconds(5)));
+
+        assertThat(job.getStatus()).isEqualTo(VideoJobStatus.FAILED);
+        verify(videoJobRepository, never()).save(any());
+    }
+
+    @Test
+    void startedEventWithSameSentAtAsLastWorkerEventIsIgnored() {
+        VideoJob job = storedJob(VideoJobStatus.FAILED);
+        job.setLastWorkerEventAt(NOW);
+
+        service.applyWorkerEvent(started(NOW));
 
         assertThat(job.getStatus()).isEqualTo(VideoJobStatus.FAILED);
         verify(videoJobRepository, never()).save(any());
@@ -239,9 +255,70 @@ class VideoJobServiceTest {
     }
 
     @Test
+    void staleUploadedJobBecomesFailed() {
+        VideoJob uploaded = job("job-u", VideoJobStatus.UPLOADED);
+        when(videoJobRepository.findByStatusAndUpdatedAtBefore(
+                VideoJobStatus.UPLOADED,
+                NOW.minus(UPLOADED_TIMEOUT_MINUTES, ChronoUnit.MINUTES)
+        )).thenReturn(List.of(uploaded));
+
+        int failed = service.failStaleJobs(NOW);
+
+        assertThat(failed).isEqualTo(1);
+        assertThat(uploaded.getStatus()).isEqualTo(VideoJobStatus.FAILED);
+        assertThat(uploaded.getFailureReason())
+                .isEqualTo("El video no se pudo enviar a la cola en 5 minutos");
+        verify(videoJobRepository).save(uploaded);
+    }
+
+    @Test
+    void publishFailureMarksQueueError() {
+        when(videoJobRepository.save(any(VideoJob.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        doThrow(new IllegalStateException("sqs caido"))
+                .when(sqsVideoJobPublisher).publish(any());
+
+        assertThatThrownBy(() -> service.registerUploadedVideo(uploadRequest()))
+                .isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+                        assertThat(exception.getStatusCode())
+                                .isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
+
+        ArgumentCaptor<VideoJob> saved = ArgumentCaptor.forClass(VideoJob.class);
+        verify(videoJobRepository, times(2)).save(saved.capture());
+        assertThat(saved.getValue().getStatus()).isEqualTo(VideoJobStatus.QUEUE_ERROR);
+    }
+
+    @Test
+    void saveFailureAfterPublishDoesNotMarkQueueError() {
+        List<String> savedStatuses = new java.util.ArrayList<>();
+        when(videoJobRepository.save(any(VideoJob.class)))
+                .thenAnswer(invocation -> {
+                    VideoJob job = invocation.getArgument(0);
+                    savedStatuses.add(job.getStatus());
+                    if (VideoJobStatus.QUEUED.equals(job.getStatus())) {
+                        throw new IllegalStateException("mongo caido");
+                    }
+                    return job;
+                });
+
+        assertThatThrownBy(() -> service.registerUploadedVideo(uploadRequest()))
+                .isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+                        assertThat(exception.getStatusCode())
+                                .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR));
+
+        verify(sqsVideoJobPublisher).publish(any());
+        assertThat(savedStatuses)
+                .containsExactly(VideoJobStatus.UPLOADED, VideoJobStatus.QUEUED);
+    }
+
+    @Test
     void staleQueuedAndProcessingJobsBecomeFailed() {
         VideoJob queued = job("job-q", VideoJobStatus.QUEUED);
         VideoJob processing = job("job-p", VideoJobStatus.PROCESSING);
+        when(videoJobRepository.findByStatusAndUpdatedAtBefore(
+                VideoJobStatus.UPLOADED,
+                NOW.minus(UPLOADED_TIMEOUT_MINUTES, ChronoUnit.MINUTES)
+        )).thenReturn(List.of());
         when(videoJobRepository.findByStatusAndUpdatedAtBefore(
                 VideoJobStatus.QUEUED,
                 NOW.minus(QUEUED_TIMEOUT_MINUTES, ChronoUnit.MINUTES)
@@ -272,6 +349,10 @@ class VideoJobServiceTest {
 
         assertThat(response.status()).isEqualTo(VideoJobStatus.FAILED);
         assertThat(response.failureReason()).isEqualTo("video no encontrado");
+    }
+
+    private VideoUploadedRequest uploadRequest() {
+        return new VideoUploadedRequest("video.mp4", "bucket", "videos/video.mp4", "CAM-01");
     }
 
     private VideoJob storedJob(String status) {

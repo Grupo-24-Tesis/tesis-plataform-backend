@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.DeleteMessageRequest;
 import software.amazon.awssdk.services.sqs.model.Message;
+import software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName;
 import software.amazon.awssdk.services.sqs.model.ReceiveMessageRequest;
 
 import java.util.List;
@@ -28,17 +29,20 @@ public class SqsVideoResultListener {
     private final ObjectMapper objectMapper;
     private final VideoJobService videoJobService;
     private final String queueUrl;
+    private final int maxReceives;
 
     public SqsVideoResultListener(
             SqsClient sqsClient,
             ObjectMapper objectMapper,
             VideoJobService videoJobService,
-            @Value("${aws.sqs.results-queue-url}") String queueUrl
+            @Value("${aws.sqs.results-queue-url}") String queueUrl,
+            @Value("${video-jobs.results-max-receives}") int maxReceives
     ) {
         this.sqsClient = sqsClient;
         this.objectMapper = objectMapper;
         this.videoJobService = videoJobService;
         this.queueUrl = queueUrl == null ? "" : queueUrl.trim();
+        this.maxReceives = maxReceives;
 
         if (this.queueUrl.isEmpty()) {
             log.warn(
@@ -62,6 +66,9 @@ public class SqsVideoResultListener {
                             .queueUrl(queueUrl)
                             .maxNumberOfMessages(MAX_MESSAGES)
                             .waitTimeSeconds(WAIT_SECONDS)
+                            .messageSystemAttributeNames(
+                                    MessageSystemAttributeName.APPROXIMATE_RECEIVE_COUNT
+                            )
                             .build()
             ).messages();
         } catch (RuntimeException exception) {
@@ -108,12 +115,7 @@ public class SqsVideoResultListener {
             delete(message);
             return;
         } catch (RuntimeException exception) {
-            log.error(
-                    "No se pudo aplicar el evento {} del job {}; se reintentará",
-                    event.eventType(),
-                    event.jobId(),
-                    exception
-            );
+            handleUnexpectedFailure(message, event, exception);
             return;
         }
 
@@ -123,6 +125,48 @@ public class SqsVideoResultListener {
                 event.jobId()
         );
         delete(message);
+    }
+
+    private void handleUnexpectedFailure(
+            Message message,
+            VideoProcessingEvent event,
+            RuntimeException exception
+    ) {
+        int receiveCount = receiveCount(message);
+
+        if (receiveCount >= maxReceives) {
+            log.error(
+                    "Se descarta el evento {} del job {} tras {} intentos",
+                    event.eventType(),
+                    event.jobId(),
+                    receiveCount,
+                    exception
+            );
+            delete(message);
+            return;
+        }
+
+        log.error(
+                "No se pudo aplicar el evento {} del job {}; se reintentará",
+                event.eventType(),
+                event.jobId(),
+                exception
+        );
+    }
+
+    private int receiveCount(Message message) {
+        String value = message.attributes()
+                .get(MessageSystemAttributeName.APPROXIMATE_RECEIVE_COUNT);
+
+        if (value == null) {
+            return 0;
+        }
+
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException exception) {
+            return 0;
+        }
     }
 
     private void delete(Message message) {

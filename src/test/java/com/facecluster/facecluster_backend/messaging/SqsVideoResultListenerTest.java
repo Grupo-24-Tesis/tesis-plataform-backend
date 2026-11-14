@@ -11,10 +11,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.DeleteMessageRequest;
 import software.amazon.awssdk.services.sqs.model.Message;
+import software.amazon.awssdk.services.sqs.model.MessageSystemAttributeName;
 import software.amazon.awssdk.services.sqs.model.ReceiveMessageRequest;
 import software.amazon.awssdk.services.sqs.model.ReceiveMessageResponse;
 
 import java.time.Instant;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -45,6 +47,8 @@ class SqsVideoResultListenerTest {
               ]
             }
             """;
+
+    private static final int MAX_RECEIVES = 5;
 
     @Mock
     private SqsClient sqsClient;
@@ -128,6 +132,44 @@ class SqsVideoResultListenerTest {
     }
 
     @Test
+    void messageStaysInTheQueueBelowTheReceiveCap() {
+        SqsVideoResultListener listener = listener(QUEUE_URL);
+        queueHolds(COMPLETED_BODY, "4");
+        doThrow(new IllegalStateException("mongo caido"))
+                .when(videoJobService).applyWorkerEvent(any());
+
+        listener.poll();
+
+        verify(sqsClient, never()).deleteMessage(any(DeleteMessageRequest.class));
+    }
+
+    @Test
+    void messageIsDeletedAtTheReceiveCap() {
+        SqsVideoResultListener listener = listener(QUEUE_URL);
+        queueHolds(COMPLETED_BODY, "5");
+        doThrow(new IllegalStateException("mongo caido"))
+                .when(videoJobService).applyWorkerEvent(any());
+
+        listener.poll();
+
+        verifyDeleted();
+    }
+
+    @Test
+    void receiveRequestAsksForTheReceiveCount() {
+        SqsVideoResultListener listener = listener(QUEUE_URL);
+        queueHolds(COMPLETED_BODY);
+
+        listener.poll();
+
+        ArgumentCaptor<ReceiveMessageRequest> request =
+                ArgumentCaptor.forClass(ReceiveMessageRequest.class);
+        verify(sqsClient).receiveMessage(request.capture());
+        assertThat(request.getValue().messageSystemAttributeNames())
+                .containsExactly(MessageSystemAttributeName.APPROXIMATE_RECEIVE_COUNT);
+    }
+
+    @Test
     void receiveErrorDoesNotPropagate() {
         SqsVideoResultListener listener = listener(QUEUE_URL);
         when(sqsClient.receiveMessage(any(ReceiveMessageRequest.class)))
@@ -149,16 +191,25 @@ class SqsVideoResultListenerTest {
 
     private SqsVideoResultListener listener(String queueUrl) {
         return new SqsVideoResultListener(
-                sqsClient, objectMapper, videoJobService, queueUrl
+                sqsClient, objectMapper, videoJobService, queueUrl, MAX_RECEIVES
         );
     }
 
     private void queueHolds(String body) {
-        Message message = Message.builder()
+        queueHolds(body, null);
+    }
+
+    private void queueHolds(String body, String receiveCount) {
+        Message.Builder builder = Message.builder()
                 .messageId("m-1")
                 .receiptHandle("recibo-1")
-                .body(body)
-                .build();
+                .body(body);
+        if (receiveCount != null) {
+            builder.attributes(Map.of(
+                    MessageSystemAttributeName.APPROXIMATE_RECEIVE_COUNT, receiveCount
+            ));
+        }
+        Message message = builder.build();
         when(sqsClient.receiveMessage(any(ReceiveMessageRequest.class)))
                 .thenReturn(ReceiveMessageResponse.builder().messages(message).build());
     }
