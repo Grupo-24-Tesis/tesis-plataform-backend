@@ -3,6 +3,7 @@ package com.facecluster.facecluster_backend.controller;
 import com.facecluster.facecluster_backend.api.DateRangeParams;
 import com.facecluster.facecluster_backend.api.DateRangeParams.DateRange;
 import com.facecluster.facecluster_backend.domain.ReportItem;
+import com.facecluster.facecluster_backend.repository.GuardRepository;
 import com.facecluster.facecluster_backend.repository.ReportRepository;
 import org.springframework.data.domain.Range;
 import org.springframework.http.HttpStatus;
@@ -21,10 +22,12 @@ public class ReportController {
     private static final String STATUS_SOLVED = "solucionado";
 
     private final ReportRepository repo;
+    private final GuardRepository guardRepository;
     private final Clock clock;
 
-    public ReportController(ReportRepository repo, Clock clock) {
+    public ReportController(ReportRepository repo, GuardRepository guardRepository, Clock clock) {
         this.repo = repo;
+        this.guardRepository = guardRepository;
         this.clock = clock;
     }
 
@@ -35,10 +38,29 @@ public class ReportController {
     }
 
 
+    @GetMapping("/{id}")
+    public ReportItem byId(@PathVariable String id) {
+        return repo.findById(id)
+                .orElseThrow(() ->
+                        new ResponseStatusException(
+                                HttpStatus.NOT_FOUND,
+                                "Reporte no encontrado"
+                        )
+                );
+    }
+
+
     @PostMapping
     public ReportItem create(@RequestBody ReportItem body) {
 
         validateStatus(body.getStatus());
+
+        if (body.getCreatedByGuardId() != null && !guardRepository.existsById(body.getCreatedByGuardId())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "El vigilante no existe"
+            );
+        }
 
         if (STATUS_SOLVED.equals(body.getStatus())) {
             requireResolvedAt(body.getResolvedAt());

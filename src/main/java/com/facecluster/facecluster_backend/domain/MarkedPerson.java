@@ -9,6 +9,7 @@ public class MarkedPerson {
     private String id;
     private String faceId;
     private String reason;
+    private String createdByGuardId;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -16,4 +17,6 @@ public class MarkedPerson {
     public void setFaceId(String faceId) { this.faceId = faceId; }
     public String getReason() { return reason; }
     public void setReason(String reason) { this.reason = reason; }
+    public String getCreatedByGuardId() { return createdByGuardId; }
+    public void setCreatedByGuardId(String createdByGuardId) { this.createdByGuardId = createdByGuardId; }
 }

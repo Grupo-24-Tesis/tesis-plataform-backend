@@ -182,11 +182,13 @@ Un evento `VIDEO_PROCESSING_COMPLETED` del intento anterior puede llegar despué
 | `POST /api/video-jobs/{jobId}/retry` | Reintenta un video fallido sin volver a subirlo. 404 si el trabajo no existe, 409 si su estado no es `FAILED` ni `QUEUE_ERROR`, 503 si no se puede publicar en SQS |
 | `POST /api/video-jobs/{jobId}/results` | Registra resultados a mano. El pipeline no lo usa: envía sus resultados por SQS |
 | `GET /api/face-appearances` | Apariciones de rostros con URL prefirmadas |
+| `GET /api/face-appearances/by-ids?faceIds=a,b,c` | Apariciones de esos `faceId` con URL prefirmadas. Omite los ids desconocidos y las imágenes que no están en S3. Máximo 50 ids por consulta (400 si se supera). Lista S3 solo bajo `faces/<jobId>/` de los videos involucrados |
 | `GET /api/face-appearances/unique` | Apariciones agrupadas por `faceId`. Filtros: `startDate`, `endDate`, `hasReports`, `suspect` |
-| `GET /api/reports`, `POST /api/reports` | Reportes de incidentes |
+| `GET /api/reports`, `POST /api/reports` | Reportes de incidentes. `POST` acepta `createdByGuardId` opcional; si se envía y el vigilante no existe responde 400 `El vigilante no existe` |
+| `GET /api/reports/{id}` | Detalle de un reporte. 404 `Reporte no encontrado` si no existe |
 | `GET /api/reports/filter` | Filtros: `status`, `date`, `startDate`, `endDate`, `dateType`. Con `dateType=resolucion` filtra por `resolvedAt`; en otro caso, por `incidentDate` |
 | `PUT /api/reports/{id}/status` | Cambia el estado de un reporte. 404 si no existe |
-| `GET /api/marked`, `POST /api/marked`, `DELETE /api/marked/{id}` | Detecciones marcadas. `POST` exige `faceId` (400) y responde 409 si ya está marcada |
+| `GET /api/marked`, `POST /api/marked`, `DELETE /api/marked/{id}` | Detecciones marcadas. `POST` exige `faceId` (400), acepta `createdByGuardId` opcional (400 si el vigilante no existe) y responde 409 si ya está marcada |
 
 Los reportes tienen dos estados, `investigacion` y `solucionado`; otro valor responde 400. Un reporte `solucionado` exige `resolvedAt` al crearse; si el estado no es `solucionado`, se vacían `resolvedAt` y `resolutionDescription`. `createdAt` lo pone el servidor.
 

@@ -18,6 +18,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -108,5 +110,37 @@ class FaceImageServiceTest {
         verify(s3Client).listObjectsV2Paginator(captor.capture());
         assertThat(captor.getValue().prefix()).isEqualTo("faces/");
         assertThat(result).hasSize(1);
+    }
+
+    @Test
+    void groupsByJobAndListsOnlyTheInvolvedJobPrefixes() {
+        s3Contains("faces/job-1/face_1.jpg", "faces/job-2/face_1.jpg");
+        FaceAppearance first = appearance("job-1_1", "faces/job-1/face_1.jpg");
+        FaceAppearance second = appearance("job-2_1", "faces/job-2/face_1.jpg");
+        second.setJobId("job-2");
+
+        List<FaceAppearance> result = serviceWithPrefix("faces/")
+                .withS3ImagesByJob(List.of(first, second));
+
+        ArgumentCaptor<ListObjectsV2Request> captor =
+                ArgumentCaptor.forClass(ListObjectsV2Request.class);
+        verify(s3Client, times(2)).listObjectsV2Paginator(captor.capture());
+        assertThat(captor.getAllValues())
+                .extracting(ListObjectsV2Request::prefix)
+                .containsExactly("faces/job-1/", "faces/job-2/");
+        assertThat(result).extracting(FaceAppearance::getFaceId)
+                .containsExactly("job-1_1", "job-2_1");
+    }
+
+    @Test
+    void skipsAppearancesWithoutJobIdWhenGrouping() {
+        FaceAppearance orphan = appearance("job-1_1", "faces/job-1/face_1.jpg");
+        orphan.setJobId(null);
+
+        List<FaceAppearance> result = serviceWithPrefix("faces/")
+                .withS3ImagesByJob(List.of(orphan));
+
+        assertThat(result).isEmpty();
+        verify(s3Client, never()).listObjectsV2Paginator(any(ListObjectsV2Request.class));
     }
 }

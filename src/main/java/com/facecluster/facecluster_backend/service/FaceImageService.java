@@ -19,7 +19,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -57,6 +59,27 @@ public class FaceImageService {
             List<FaceAppearance> appearances
     ) {
         return withS3Images(appearances, jobPrefix(jobId));
+    }
+
+    public List<FaceAppearance> withS3ImagesByJob(List<FaceAppearance> appearances) {
+        Map<String, List<FaceAppearance>> byJob = new LinkedHashMap<>();
+
+        for (FaceAppearance appearance : appearances) {
+            if (appearance.getJobId() == null || appearance.getJobId().isBlank()) {
+                continue;
+            }
+
+            byJob.computeIfAbsent(appearance.getJobId(), key -> new ArrayList<>())
+                    .add(appearance);
+        }
+
+        List<FaceAppearance> result = new ArrayList<>();
+
+        for (Map.Entry<String, List<FaceAppearance>> entry : byJob.entrySet()) {
+            result.addAll(withS3ImagesForJob(entry.getKey(), entry.getValue()));
+        }
+
+        return result;
     }
 
     private String jobPrefix(String jobId) {

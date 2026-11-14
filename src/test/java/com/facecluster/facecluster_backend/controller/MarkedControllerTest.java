@@ -2,6 +2,7 @@ package com.facecluster.facecluster_backend.controller;
 
 import com.facecluster.facecluster_backend.api.ApiExceptionHandler;
 import com.facecluster.facecluster_backend.domain.MarkedPerson;
+import com.facecluster.facecluster_backend.repository.GuardRepository;
 import com.facecluster.facecluster_backend.repository.MarkedRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,13 +25,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class MarkedControllerTest {
 
     private MarkedRepository repository;
+    private GuardRepository guardRepository;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         repository = mock(MarkedRepository.class);
+        guardRepository = mock(GuardRepository.class);
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new MarkedController(repository))
+                .standaloneSetup(new MarkedController(repository, guardRepository))
                 .setControllerAdvice(new ApiExceptionHandler())
                 .build();
     }
@@ -60,6 +63,31 @@ class MarkedControllerTest {
                         .content("{\"faceId\":\"job-1_4\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.status").value(409));
+    }
+
+    @Test
+    void vigilanteDesconocidoResponde400() throws Exception {
+        when(guardRepository.existsById("g-x")).thenReturn(false);
+
+        mockMvc.perform(post("/api/marked")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"faceId\":\"job-1_4\",\"createdByGuardId\":\"g-x\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("El vigilante no existe"));
+
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void vigilanteConocidoSeGuardaConLaMarca() throws Exception {
+        when(guardRepository.existsById("g-1")).thenReturn(true);
+        when(repository.save(any(MarkedPerson.class))).thenAnswer(call -> call.getArgument(0));
+
+        mockMvc.perform(post("/api/marked")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"faceId\":\"job-1_4\",\"createdByGuardId\":\"g-1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.createdByGuardId").value("g-1"));
     }
 
     @Test

@@ -9,7 +9,9 @@ import com.facecluster.facecluster_backend.repository.ReportRepository;
 import com.facecluster.facecluster_backend.service.FaceImageService;
 
 import org.springframework.data.domain.Range;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -19,6 +21,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/face-appearances")
 public class FaceAppearanceController {
+
+private static final int MAX_BY_IDS = 50;
 
 
 private final FaceAppearanceRepository repository;
@@ -42,6 +46,27 @@ public FaceAppearanceController(
 @GetMapping
 public List<FaceAppearance> findAll() {
     return faceImageService.withS3Images(repository.findAll());
+}
+
+
+@GetMapping("/by-ids")
+public List<FaceAppearance> findByIds(@RequestParam List<String> faceIds) {
+
+    List<String> ids =
+            faceIds.stream()
+                    .map(String::trim)
+                    .filter(id -> !id.isEmpty())
+                    .distinct()
+                    .toList();
+
+    if (ids.size() > MAX_BY_IDS) {
+        throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Se permiten como máximo " + MAX_BY_IDS + " detecciones por consulta"
+        );
+    }
+
+    return faceImageService.withS3ImagesByJob(repository.findAllById(ids));
 }
 
 

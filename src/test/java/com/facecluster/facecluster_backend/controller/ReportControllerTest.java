@@ -2,6 +2,7 @@ package com.facecluster.facecluster_backend.controller;
 
 import com.facecluster.facecluster_backend.api.ApiExceptionHandler;
 import com.facecluster.facecluster_backend.domain.ReportItem;
+import com.facecluster.facecluster_backend.repository.GuardRepository;
 import com.facecluster.facecluster_backend.repository.ReportRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,7 @@ class ReportControllerTest {
     );
 
     private ReportRepository repository;
+    private GuardRepository guardRepository;
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -46,10 +48,66 @@ class ReportControllerTest {
         repository = mock(ReportRepository.class);
         when(repository.save(any(ReportItem.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        guardRepository = mock(GuardRepository.class);
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new ReportController(repository, CLOCK))
+                .standaloneSetup(new ReportController(repository, guardRepository, CLOCK))
                 .setControllerAdvice(new ApiExceptionHandler())
                 .build();
+    }
+
+    @Test
+    void createWithUnknownGuardRespondsBadRequest() throws Exception {
+        when(guardRepository.existsById("g-x")).thenReturn(false);
+
+        mockMvc.perform(post("/api/reports")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"investigacion\",\"createdByGuardId\":\"g-x\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("El vigilante no existe"));
+
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void createWithKnownGuardStoresIt() throws Exception {
+        when(guardRepository.existsById("g-1")).thenReturn(true);
+
+        mockMvc.perform(post("/api/reports")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"investigacion\",\"createdByGuardId\":\"g-1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.createdByGuardId").value("g-1"));
+    }
+
+    @Test
+    void createWithoutGuardStillWorks() throws Exception {
+        mockMvc.perform(post("/api/reports")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"investigacion\"}"))
+                .andExpect(status().isOk());
+
+        verify(guardRepository, never()).existsById(any());
+    }
+
+    @Test
+    void getByIdReturnsTheReport() throws Exception {
+        ReportItem report = new ReportItem();
+        report.setId("r1");
+        report.setTitle("Robo");
+        when(repository.findById("r1")).thenReturn(Optional.of(report));
+
+        mockMvc.perform(get("/api/reports/r1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Robo"));
+    }
+
+    @Test
+    void getByIdUnknownRespondsNotFound() throws Exception {
+        when(repository.findById("nope")).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/reports/nope"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Reporte no encontrado"));
     }
 
     @Test

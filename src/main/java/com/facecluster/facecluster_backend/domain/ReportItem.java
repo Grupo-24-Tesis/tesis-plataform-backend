@@ -27,6 +27,8 @@ public class ReportItem {
 
     private List<String> faceIds;
 
+    private String createdByGuardId;
+
     public ReportItem() {}
 
 
@@ -116,5 +118,13 @@ public class ReportItem {
 
     public void setFaceIds(List<String> faceIds) {
         this.faceIds = faceIds;
+    }
+
+    public String getCreatedByGuardId() {
+        return createdByGuardId;
+    }
+
+    public void setCreatedByGuardId(String createdByGuardId) {
+        this.createdByGuardId = createdByGuardId;
     }
 }
