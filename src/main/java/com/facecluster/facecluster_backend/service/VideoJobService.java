@@ -135,6 +135,14 @@ public class VideoJobService {
         return toResponse(findJob(jobId));
     }
 
+    public List<VideoJobResponse> listJobs(String cameraId) {
+        List<VideoJob> jobs = isBlank(cameraId)
+                ? videoJobRepository.findAllByOrderByCreatedAtDesc()
+                : videoJobRepository.findByCameraIdOrderByCreatedAtDesc(cameraId.trim());
+
+        return jobs.stream().map(this::toResponse).toList();
+    }
+
     public void processResults(String jobId, VideoResultRequest request) {
         VideoJob job = findJob(jobId);
 

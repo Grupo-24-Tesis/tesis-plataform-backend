@@ -9,6 +9,10 @@ import java.util.List;
 public interface VideoJobRepository
         extends MongoRepository<VideoJob, String> {
 
+    List<VideoJob> findAllByOrderByCreatedAtDesc();
+
+    List<VideoJob> findByCameraIdOrderByCreatedAtDesc(String cameraId);
+
     List<VideoJob> findByStatusAndUpdatedAtBefore(
             String status,
             Instant updatedAt

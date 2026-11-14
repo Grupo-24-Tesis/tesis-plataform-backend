@@ -156,6 +156,8 @@ imágenes borradas. Las personas sin ninguna imagen en el bucket no se muestran.
 | `GET /api/cameras`, `POST /api/cameras` | Cámaras |
 | `POST /api/videos/upload-url` | URL prefirmada para subir un video |
 | `POST /api/videos` | Registra el video subido y lo envía a la cola |
+| `GET /api/video-jobs` | Lista los trabajos, del más reciente al más antiguo. Filtro opcional: `cameraId` |
+| `GET /api/video-jobs/{jobId}/faces` | Rostros de un trabajo con URL prefirmadas. 404 si el trabajo no existe |
 | `GET /api/video-jobs/{jobId}` | Estado de un trabajo, con `failureReason` si falló |
 | `POST /api/video-jobs/{jobId}/results` | Registra resultados a mano. El pipeline no lo usa: envía sus resultados por SQS |
 | `GET /api/face-appearances`, `POST /api/face-appearances` | Apariciones de rostros |

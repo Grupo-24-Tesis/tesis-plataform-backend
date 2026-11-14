@@ -9,6 +9,8 @@ import java.util.List;
 public interface FaceAppearanceRepository
         extends MongoRepository<FaceAppearance, String> {
 
+    List<FaceAppearance> findByJobIdOrderByTimestampAsc(String jobId);
+
     List<FaceAppearance> findByCapturedAtBetween(
             LocalDateTime start,
             LocalDateTime end

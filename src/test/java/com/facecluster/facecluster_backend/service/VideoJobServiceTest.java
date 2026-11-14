@@ -78,6 +78,36 @@ class VideoJobServiceTest {
     }
 
     @Test
+    void listsAllJobsNewestFirstWhenThereIsNoCameraId() {
+        VideoJob newer = new VideoJob();
+        newer.setId("job-2");
+        VideoJob older = new VideoJob();
+        older.setId("job-1");
+        when(videoJobRepository.findAllByOrderByCreatedAtDesc())
+                .thenReturn(List.of(newer, older));
+
+        List<VideoJobResponse> result = service.listJobs(null);
+
+        assertThat(result).extracting(VideoJobResponse::jobId)
+                .containsExactly("job-2", "job-1");
+        verify(videoJobRepository, never()).findByCameraIdOrderByCreatedAtDesc(any());
+    }
+
+    @Test
+    void listsJobsOfACameraNewestFirst() {
+        VideoJob job = new VideoJob();
+        job.setId("job-3");
+        job.setCameraId("cam-1");
+        when(videoJobRepository.findByCameraIdOrderByCreatedAtDesc("cam-1"))
+                .thenReturn(List.of(job));
+
+        List<VideoJobResponse> result = service.listJobs("cam-1");
+
+        assertThat(result).extracting(VideoJobResponse::cameraId).containsExactly("cam-1");
+        verify(videoJobRepository, never()).findAllByOrderByCreatedAtDesc();
+    }
+
+    @Test
     void startedEventMovesJobToProcessing() {
         VideoJob job = storedJob(VideoJobStatus.QUEUED);
 

@@ -49,7 +49,26 @@ public class FaceImageService {
     }
 
     public List<FaceAppearance> withS3Images(List<FaceAppearance> appearances) {
-        Set<String> existingKeys = listFaceKeys();
+        return withS3Images(appearances, facesPrefix);
+    }
+
+    public List<FaceAppearance> withS3ImagesForJob(
+            String jobId,
+            List<FaceAppearance> appearances
+    ) {
+        return withS3Images(appearances, jobPrefix(jobId));
+    }
+
+    private String jobPrefix(String jobId) {
+        String base = facesPrefix.endsWith("/") ? facesPrefix : facesPrefix + "/";
+        return base + jobId + "/";
+    }
+
+    private List<FaceAppearance> withS3Images(
+            List<FaceAppearance> appearances,
+            String prefix
+    ) {
+        Set<String> existingKeys = listFaceKeys(prefix);
         List<FaceAppearance> result = new ArrayList<>();
 
         for (FaceAppearance appearance : appearances) {
@@ -65,11 +84,11 @@ public class FaceImageService {
         return result;
     }
 
-    private Set<String> listFaceKeys() {
+    private Set<String> listFaceKeys(String prefix) {
         try {
             ListObjectsV2Request request = ListObjectsV2Request.builder()
                     .bucket(bucket)
-                    .prefix(facesPrefix)
+                    .prefix(prefix)
                     .build();
 
             Set<String> keys = new HashSet<>();
@@ -84,7 +103,7 @@ public class FaceImageService {
             log.error(
                     "No se pudieron listar las imágenes en S3. bucket={}, prefix={}",
                     bucket,
-                    facesPrefix,
+                    prefix,
                     exception
             );
 
