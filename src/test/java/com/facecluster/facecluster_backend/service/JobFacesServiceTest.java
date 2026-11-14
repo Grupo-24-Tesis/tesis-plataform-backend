@@ -27,11 +27,11 @@ class JobFacesServiceTest {
     @Test
     void failsWhenTheJobDoesNotExist() {
         when(videoJobService.getJobById("missing"))
-                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Job no encontrado"));
+                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Trabajo no encontrado"));
 
         assertThatThrownBy(() -> service.getFaces("missing"))
                 .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("Job no encontrado");
+                .hasMessageContaining("Trabajo no encontrado");
 
         verifyNoInteractions(repository, faceImageService);
     }

@@ -286,6 +286,49 @@ class VideoJobServiceTest {
     }
 
     @Test
+    void completedEventWithFaceIdOfAnotherJobIsInvalid() {
+        VideoJob job = storedJob(VideoJobStatus.PROCESSING);
+
+        assertThatThrownBy(() -> service.applyWorkerEvent(completed(NOW, List.of(
+                new FaceAppearanceResult("job-1_4", "00:00:01", "url-4", null),
+                new FaceAppearanceResult("job-2_7", "00:00:02", "url-7", null)
+        )))).isInstanceOf(InvalidWorkerEventException.class)
+                .hasMessage("El faceId job-2_7 no pertenece al trabajo job-1");
+
+        verify(faceAppearanceRepository, never()).saveAll(anyList());
+        assertThat(job.getStatus()).isEqualTo(VideoJobStatus.PROCESSING);
+    }
+
+    @Test
+    void completedEventWithFaceIdThatOnlySharesThePrefixIsInvalid() {
+        storedJob(VideoJobStatus.PROCESSING);
+
+        assertThatThrownBy(() -> service.applyWorkerEvent(completed(NOW, List.of(
+                new FaceAppearanceResult("job-10_4", "00:00:01", "url-4", null)
+        )))).isInstanceOf(InvalidWorkerEventException.class);
+
+        verify(faceAppearanceRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    void restResultsWithFaceIdOfAnotherJobAnswerBadRequest() {
+        storedJob(VideoJobStatus.PROCESSING);
+
+        assertThatThrownBy(() -> service.processResults(
+                "job-1",
+                new VideoResultRequest(List.of(
+                        new FaceAppearanceResult("job-2_4", "00:00:01", "url-4", null)
+                ))
+        )).isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
+            assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(exception.getReason())
+                    .isEqualTo("El faceId job-2_4 no pertenece al trabajo job-1");
+        });
+
+        verify(faceAppearanceRepository, never()).saveAll(anyList());
+    }
+
+    @Test
     void restResultsForUnknownJobAnswerNotFound() {
         when(videoJobRepository.findById("job-1")).thenReturn(Optional.empty());
 
@@ -405,11 +448,11 @@ class VideoJobServiceTest {
     void registerRejectsKeysOutsideVideosPrefix() {
         assertBadRequest(
                 new VideoUploadedRequest("x.mp4", BUCKET, "otros/x.mp4", "CAM-01"),
-                "objectKey no es valido"
+                "objectKey no es válido"
         );
         assertBadRequest(
                 new VideoUploadedRequest("x.mp4", BUCKET, "videos/../x", "CAM-01"),
-                "objectKey no es valido"
+                "objectKey no es válido"
         );
     }
 
@@ -419,7 +462,7 @@ class VideoJobServiceTest {
 
         assertBadRequest(
                 new VideoUploadedRequest("x.mp4", BUCKET, "videos/x.mp4", "CAM-99"),
-                "La camara no existe"
+                "La cámara no existe"
         );
     }
 

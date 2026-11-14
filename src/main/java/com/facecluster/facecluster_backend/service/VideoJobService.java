@@ -123,7 +123,7 @@ public class VideoJobService {
 
             throw new ResponseStatusException(
                     HttpStatus.INTERNAL_SERVER_ERROR,
-                    "El video se envio a la cola, pero no se pudo actualizar su estado",
+                    "El video se envió a la cola, pero no se pudo actualizar su estado",
                     exception
             );
         }
@@ -166,7 +166,7 @@ public class VideoJobService {
 
         VideoJob job = videoJobRepository.findById(event.jobId())
                 .orElseThrow(() ->
-                        new InvalidWorkerEventException("Job no encontrado")
+                        new InvalidWorkerEventException("Trabajo no encontrado")
                 );
 
         Instant sentAt = event.sentAt() != null ? event.sentAt() : Instant.now();
@@ -277,6 +277,12 @@ public class VideoJobService {
                 throw new InvalidWorkerEventException("faceId es obligatorio");
             }
 
+            if (!result.faceId().startsWith(job.getId() + "_")) {
+                throw new InvalidWorkerEventException(
+                        "El faceId " + result.faceId() + " no pertenece al trabajo " + job.getId()
+                );
+            }
+
             FaceAppearance appearance = new FaceAppearance();
             appearance.setId(result.faceId());
             appearance.setJobId(job.getId());
@@ -322,7 +328,7 @@ public class VideoJobService {
                 .orElseThrow(() ->
                         new ResponseStatusException(
                                 HttpStatus.NOT_FOUND,
-                                "Job no encontrado"
+                                "Trabajo no encontrado"
                         )
                 );
     }
@@ -374,14 +380,14 @@ public class VideoJobService {
         if (!objectKey.startsWith("videos/") || objectKey.contains("..")) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "objectKey no es valido"
+                    "objectKey no es válido"
             );
         }
 
         if (!cameraRepository.existsById(request.cameraId().trim())) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "La camara no existe"
+                    "La cámara no existe"
             );
         }
     }

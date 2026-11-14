@@ -41,12 +41,7 @@ public class ReportController {
         validateStatus(body.getStatus());
 
         if (STATUS_SOLVED.equals(body.getStatus())) {
-            if (body.getResolvedAt() == null) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "Un reporte solucionado necesita fecha de solucion"
-                );
-            }
+            requireResolvedAt(body.getResolvedAt());
         } else {
             body.setResolvedAt(null);
             body.setResolutionDescription(null);
@@ -165,6 +160,10 @@ public class ReportController {
 
         validateStatus(request.status());
 
+        if (STATUS_SOLVED.equals(request.status())) {
+            requireResolvedAt(request.resolvedAt());
+        }
+
         ReportItem report =
                 repo.findById(id)
                         .orElseThrow(() ->
@@ -207,7 +206,19 @@ public class ReportController {
 
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "Estado de reporte no valido"
+                    "Estado de reporte no válido"
+            );
+        }
+    }
+
+
+    private void requireResolvedAt(LocalDateTime resolvedAt) {
+
+        if (resolvedAt == null) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Un reporte solucionado necesita fecha de solución"
             );
         }
     }

@@ -59,7 +59,7 @@ class ApiExceptionHandlerTest {
         mockMvc.perform(get("/api/face-appearances/unique").param("startDate", "14/11/2026"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("Fecha invalida")));
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("Fecha inválida")));
 
         verify(faceAppearanceRepository, never()).findAll();
     }
@@ -82,7 +82,7 @@ class ApiExceptionHandlerTest {
 
         mockMvc.perform(put("/api/reports/x/status")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"status\":\"solucionado\"}"))
+                        .content("{\"status\":\"solucionado\",\"resolvedAt\":\"2026-11-14T09:00:00\"}"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404))
                 .andExpect(jsonPath("$.message").value("Reporte no encontrado"));
@@ -94,6 +94,6 @@ class ApiExceptionHandlerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{no es json"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("El cuerpo de la peticion no es valido"));
+                .andExpect(jsonPath("$.message").value("El cuerpo de la petición no es válido"));
     }
 }

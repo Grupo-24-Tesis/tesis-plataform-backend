@@ -20,23 +20,23 @@ public class ApiExceptionHandler {
         HttpStatusCode status = exception.getStatusCode();
         String message = exception.getReason() != null
                 ? exception.getReason()
-                : "No se pudo procesar la peticion";
+                : "No se pudo procesar la petición";
         return ResponseEntity.status(status).body(new ApiError(status.value(), message));
     }
 
     @ExceptionHandler(DateTimeParseException.class)
     public ResponseEntity<ApiError> handleDateTimeParse(DateTimeParseException exception) {
-        return badRequest("Fecha invalida: " + exception.getParsedString());
+        return badRequest("Fecha inválida: " + exception.getParsedString());
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ApiError> handleTypeMismatch(MethodArgumentTypeMismatchException exception) {
-        return badRequest("Valor invalido para el parametro " + exception.getName());
+        return badRequest("Valor inválido para el parámetro " + exception.getName());
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiError> handleNotReadable(HttpMessageNotReadableException exception) {
-        return badRequest("El cuerpo de la peticion no es valido");
+        return badRequest("El cuerpo de la petición no es válido");
     }
 
     @ExceptionHandler(DuplicateKeyException.class)

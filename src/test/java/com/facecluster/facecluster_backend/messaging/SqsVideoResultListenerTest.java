@@ -111,7 +111,7 @@ class SqsVideoResultListenerTest {
     void invalidEventIsDeleted() {
         SqsVideoResultListener listener = listener(QUEUE_URL);
         queueHolds(COMPLETED_BODY);
-        doThrow(new InvalidWorkerEventException("Job no encontrado"))
+        doThrow(new InvalidWorkerEventException("Trabajo no encontrado"))
                 .when(videoJobService).applyWorkerEvent(any());
 
         listener.poll();

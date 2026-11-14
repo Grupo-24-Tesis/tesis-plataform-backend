@@ -29,7 +29,7 @@ public class MarkedController {
         }
 
         if (repo.existsByFaceId(body.getFaceId())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "La deteccion ya esta marcada");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "La detección ya está marcada");
         }
 
         body.setId(null);

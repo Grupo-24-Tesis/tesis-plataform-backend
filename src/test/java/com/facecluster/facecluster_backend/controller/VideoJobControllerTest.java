@@ -94,10 +94,10 @@ class VideoJobControllerTest {
     @Test
     void returnsNotFoundWhenTheJobDoesNotExist() throws Exception {
         when(jobFacesService.getFaces("missing"))
-                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Job no encontrado"));
+                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Trabajo no encontrado"));
 
         mockMvc.perform(get("/api/video-jobs/missing/faces"))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.message").value("Job no encontrado"));
+                .andExpect(jsonPath("$.message").value("Trabajo no encontrado"));
     }
 }

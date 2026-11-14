@@ -53,7 +53,7 @@ public final class DateRangeParams {
         } catch (DateTimeParseException exception) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "Fecha invalida: " + value + ". Formato esperado AAAA-MM-DD"
+                    "Fecha inválida: " + value + ". Formato esperado AAAA-MM-DD"
             );
         }
     }

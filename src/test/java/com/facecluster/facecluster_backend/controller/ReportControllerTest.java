@@ -58,7 +58,7 @@ class ReportControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\":\"cerrado\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("Estado de reporte no valido"));
+                .andExpect(jsonPath("$.message").value("Estado de reporte no válido"));
 
         verify(repository, never()).save(any());
     }
@@ -69,7 +69,7 @@ class ReportControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("Estado de reporte no valido"));
+                .andExpect(jsonPath("$.message").value("Estado de reporte no válido"));
     }
 
     @Test
@@ -114,7 +114,7 @@ class ReportControllerTest {
                         .content("{\"title\":\"t\",\"status\":\"solucionado\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message")
-                        .value("Un reporte solucionado necesita fecha de solucion"));
+                        .value("Un reporte solucionado necesita fecha de solución"));
 
         verify(repository, never()).save(any());
     }
@@ -125,7 +125,7 @@ class ReportControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"title\":\"t\",\"status\":\"otro\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("Estado de reporte no valido"));
+                .andExpect(jsonPath("$.message").value("Estado de reporte no válido"));
     }
 
     @Test
@@ -140,6 +140,18 @@ class ReportControllerTest {
         assertThat(saved.getValue().getId()).isNull();
         assertThat(saved.getValue().getCreatedAt()).hasToString("2026-10-16T10:05:21");
         assertThat(saved.getValue().getResolutionDescription()).isNull();
+    }
+
+    @Test
+    void updateStatusToSolvedWithoutResolvedAtResponds400() throws Exception {
+        mockMvc.perform(put("/api/reports/r1/status")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"solucionado\",\"resolutionDescription\":\"resuelto\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Un reporte solucionado necesita fecha de solución"));
+
+        verify(repository, never()).save(any());
     }
 
     @Test

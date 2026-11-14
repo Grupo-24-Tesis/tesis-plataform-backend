@@ -57,7 +57,7 @@ class DateRangeParamsTest {
         );
 
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
-        assertEquals("Fecha invalida: 14/11/2026. Formato esperado AAAA-MM-DD", exception.getReason());
+        assertEquals("Fecha inválida: 14/11/2026. Formato esperado AAAA-MM-DD", exception.getReason());
     }
 
     @Test

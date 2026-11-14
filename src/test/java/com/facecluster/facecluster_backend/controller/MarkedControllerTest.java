@@ -44,7 +44,7 @@ class MarkedControllerTest {
                         .content("{\"faceId\":\"job-1_4\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.status").value(409))
-                .andExpect(jsonPath("$.message").value("La deteccion ya esta marcada"));
+                .andExpect(jsonPath("$.message").value("La detección ya está marcada"));
 
         verify(repository, never()).save(any());
     }
