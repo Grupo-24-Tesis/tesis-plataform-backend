@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -15,10 +16,15 @@ import java.util.List;
 @RequestMapping("/api/reports")
 public class ReportController {
 
-    private final ReportRepository repo;
+    private static final String STATUS_INVESTIGATION = "investigacion";
+    private static final String STATUS_SOLVED = "solucionado";
 
-    public ReportController(ReportRepository repo) {
+    private final ReportRepository repo;
+    private final Clock clock;
+
+    public ReportController(ReportRepository repo, Clock clock) {
         this.repo = repo;
+        this.clock = clock;
     }
 
 
@@ -31,7 +37,22 @@ public class ReportController {
     @PostMapping
     public ReportItem create(@RequestBody ReportItem body) {
 
-        body.setCreatedAt(LocalDateTime.now());
+        validateStatus(body.getStatus());
+
+        if (STATUS_SOLVED.equals(body.getStatus())) {
+            if (body.getResolvedAt() == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Un reporte solucionado necesita fecha de solucion"
+                );
+            }
+        } else {
+            body.setResolvedAt(null);
+            body.setResolutionDescription(null);
+        }
+
+        body.setId(null);
+        body.setCreatedAt(LocalDateTime.now(clock));
 
         return repo.save(body);
     }
@@ -141,6 +162,8 @@ public class ReportController {
 
     ) {
 
+        validateStatus(request.status());
+
         ReportItem report =
                 repo.findById(id)
                         .orElseThrow(() ->
@@ -156,10 +179,7 @@ public class ReportController {
         );
 
 
-        if (
-                "solucionado"
-                        .equals(request.status())
-        ) {
+        if (STATUS_SOLVED.equals(request.status())) {
 
             report.setResolvedAt(
                     request.resolvedAt()
@@ -168,10 +188,27 @@ public class ReportController {
             report.setResolutionDescription(
                     request.resolutionDescription()
             );
+        } else {
+
+            report.setResolvedAt(null);
+
+            report.setResolutionDescription(null);
         }
 
 
         return repo.save(report);
+    }
+
+
+    private void validateStatus(String status) {
+
+        if (!STATUS_INVESTIGATION.equals(status) && !STATUS_SOLVED.equals(status)) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Estado de reporte no valido"
+            );
+        }
     }
 
 

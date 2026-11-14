@@ -175,6 +175,8 @@ public FaceAppearance create(
         @RequestBody FaceAppearance body
 ) {
 
+    body.setId(null);
+
     return repository.save(body);
 }
 

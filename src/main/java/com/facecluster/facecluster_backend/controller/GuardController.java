@@ -12,5 +12,8 @@ public class GuardController {
     public GuardController(GuardRepository repo) { this.repo = repo; }
 
     @GetMapping public List<Guard> all() { return repo.findAll(); }
-    @PostMapping public Guard create(@RequestBody Guard body) { return repo.save(body); }
+    @PostMapping public Guard create(@RequestBody Guard body) {
+        body.setId(null);
+        return repo.save(body);
+    }
 }

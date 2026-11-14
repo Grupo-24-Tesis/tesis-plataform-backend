@@ -12,5 +12,8 @@ public class CameraController {
     public CameraController(CameraRepository repo) { this.repo = repo; }
 
     @GetMapping public List<Camera> all() { return repo.findAll(); }
-    @PostMapping public Camera create(@RequestBody Camera body) { return repo.save(body); }
+    @PostMapping public Camera create(@RequestBody Camera body) {
+        body.setId(null);
+        return repo.save(body);
+    }
 }

@@ -10,6 +10,7 @@ import com.facecluster.facecluster_backend.dto.VideoResultRequest.FaceAppearance
 import com.facecluster.facecluster_backend.messaging.InvalidWorkerEventException;
 import com.facecluster.facecluster_backend.messaging.SqsVideoJobPublisher;
 import com.facecluster.facecluster_backend.messaging.VideoProcessingEvent;
+import com.facecluster.facecluster_backend.repository.CameraRepository;
 import com.facecluster.facecluster_backend.repository.FaceAppearanceRepository;
 import com.facecluster.facecluster_backend.repository.VideoJobRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,7 +22,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
@@ -39,6 +42,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class VideoJobServiceTest {
 
+    private static final String BUCKET = "bucket";
     private static final long UPLOADED_TIMEOUT_MINUTES = 5;
     private static final long QUEUED_TIMEOUT_MINUTES = 720;
     private static final long PROCESSING_TIMEOUT_MINUTES = 15;
@@ -51,6 +55,9 @@ class VideoJobServiceTest {
     private FaceAppearanceRepository faceAppearanceRepository;
 
     @Mock
+    private CameraRepository cameraRepository;
+
+    @Mock
     private SqsVideoJobPublisher sqsVideoJobPublisher;
 
     private VideoJobService service;
@@ -60,7 +67,10 @@ class VideoJobServiceTest {
         service = new VideoJobService(
                 videoJobRepository,
                 faceAppearanceRepository,
+                cameraRepository,
                 sqsVideoJobPublisher,
+                BUCKET,
+                Clock.system(ZoneId.of("America/Bogota")),
                 UPLOADED_TIMEOUT_MINUTES,
                 QUEUED_TIMEOUT_MINUTES,
                 PROCESSING_TIMEOUT_MINUTES
@@ -152,7 +162,7 @@ class VideoJobServiceTest {
                         "job-1_4",
                         "00:01:23",
                         "https://bucket.s3.us-east-2.amazonaws.com/faces/job-1/4.jpg",
-                        "2026-10-16T10:05:21-05:00"
+                        "2026-10-16T15:05:21Z"
                 )
         )));
 
@@ -273,6 +283,7 @@ class VideoJobServiceTest {
 
     @Test
     void publishFailureMarksQueueError() {
+        when(cameraRepository.existsById("CAM-01")).thenReturn(true);
         when(videoJobRepository.save(any(VideoJob.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         doThrow(new IllegalStateException("sqs caido"))
@@ -290,6 +301,7 @@ class VideoJobServiceTest {
 
     @Test
     void saveFailureAfterPublishDoesNotMarkQueueError() {
+        when(cameraRepository.existsById("CAM-01")).thenReturn(true);
         List<String> savedStatuses = new java.util.ArrayList<>();
         when(videoJobRepository.save(any(VideoJob.class)))
                 .thenAnswer(invocation -> {
@@ -351,8 +363,59 @@ class VideoJobServiceTest {
         assertThat(response.failureReason()).isEqualTo("video no encontrado");
     }
 
+    @Test
+    void registerRejectsAnotherBucket() {
+        VideoUploadedRequest request =
+                new VideoUploadedRequest("video.mp4", "otro", "videos/video.mp4", "CAM-01");
+
+        assertBadRequest(request, "El bucket no corresponde al configurado");
+    }
+
+    @Test
+    void registerRejectsKeysOutsideVideosPrefix() {
+        assertBadRequest(
+                new VideoUploadedRequest("x.mp4", BUCKET, "otros/x.mp4", "CAM-01"),
+                "objectKey no es valido"
+        );
+        assertBadRequest(
+                new VideoUploadedRequest("x.mp4", BUCKET, "videos/../x", "CAM-01"),
+                "objectKey no es valido"
+        );
+    }
+
+    @Test
+    void registerRejectsUnknownCamera() {
+        when(cameraRepository.existsById("CAM-99")).thenReturn(false);
+
+        assertBadRequest(
+                new VideoUploadedRequest("x.mp4", BUCKET, "videos/x.mp4", "CAM-99"),
+                "La camara no existe"
+        );
+    }
+
+    @Test
+    void registerWithValidRequestPublishes() {
+        when(cameraRepository.existsById("CAM-01")).thenReturn(true);
+        when(videoJobRepository.save(any(VideoJob.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.registerUploadedVideo(uploadRequest());
+
+        verify(sqsVideoJobPublisher).publish(any());
+    }
+
+    private void assertBadRequest(VideoUploadedRequest request, String message) {
+        assertThatThrownBy(() -> service.registerUploadedVideo(request))
+                .isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
+                    assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(exception.getReason()).isEqualTo(message);
+                });
+        verify(sqsVideoJobPublisher, never()).publish(any());
+        verify(videoJobRepository, never()).save(any());
+    }
+
     private VideoUploadedRequest uploadRequest() {
-        return new VideoUploadedRequest("video.mp4", "bucket", "videos/video.mp4", "CAM-01");
+        return new VideoUploadedRequest("video.mp4", BUCKET, "videos/video.mp4", "CAM-01");
     }
 
     private VideoJob storedJob(String status) {

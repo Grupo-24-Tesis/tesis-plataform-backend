@@ -11,6 +11,7 @@ import com.facecluster.facecluster_backend.messaging.InvalidWorkerEventException
 import com.facecluster.facecluster_backend.messaging.SqsVideoJobPublisher;
 import com.facecluster.facecluster_backend.messaging.VideoProcessingEvent;
 import com.facecluster.facecluster_backend.messaging.VideoProcessingMessage;
+import com.facecluster.facecluster_backend.repository.CameraRepository;
 import com.facecluster.facecluster_backend.repository.FaceAppearanceRepository;
 import com.facecluster.facecluster_backend.repository.VideoJobRepository;
 import org.slf4j.Logger;
@@ -20,6 +21,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -34,7 +36,10 @@ public class VideoJobService {
 
     private final VideoJobRepository videoJobRepository;
     private final FaceAppearanceRepository faceAppearanceRepository;
+    private final CameraRepository cameraRepository;
     private final SqsVideoJobPublisher sqsVideoJobPublisher;
+    private final String bucket;
+    private final Clock clock;
     private final long uploadedTimeoutMinutes;
     private final long queuedTimeoutMinutes;
     private final long processingTimeoutMinutes;
@@ -42,14 +47,20 @@ public class VideoJobService {
     public VideoJobService(
             VideoJobRepository videoJobRepository,
             FaceAppearanceRepository faceAppearanceRepository,
+            CameraRepository cameraRepository,
             SqsVideoJobPublisher sqsVideoJobPublisher,
+            @Value("${aws.s3.bucket}") String bucket,
+            Clock clock,
             @Value("${video-jobs.uploaded-timeout-minutes}") long uploadedTimeoutMinutes,
             @Value("${video-jobs.queued-timeout-minutes}") long queuedTimeoutMinutes,
             @Value("${video-jobs.processing-timeout-minutes}") long processingTimeoutMinutes
     ) {
         this.videoJobRepository = videoJobRepository;
         this.faceAppearanceRepository = faceAppearanceRepository;
+        this.cameraRepository = cameraRepository;
         this.sqsVideoJobPublisher = sqsVideoJobPublisher;
+        this.bucket = bucket;
+        this.clock = clock;
         this.uploadedTimeoutMinutes = uploadedTimeoutMinutes;
         this.queuedTimeoutMinutes = queuedTimeoutMinutes;
         this.processingTimeoutMinutes = processingTimeoutMinutes;
@@ -269,7 +280,9 @@ public class VideoJobService {
             if (!isBlank(result.capturedAt())) {
                 try {
                     appearance.setCapturedAt(
-                            OffsetDateTime.parse(result.capturedAt()).toLocalDateTime()
+                            OffsetDateTime.parse(result.capturedAt())
+                                    .atZoneSameInstant(clock.getZone())
+                                    .toLocalDateTime()
                     );
                 } catch (DateTimeParseException exception) {
                     throw new InvalidWorkerEventException(
@@ -339,6 +352,28 @@ public class VideoJobService {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "cameraId es obligatorio"
+            );
+        }
+
+        if (!bucket.equals(request.bucket().trim())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "El bucket no corresponde al configurado"
+            );
+        }
+
+        String objectKey = request.objectKey().trim();
+        if (!objectKey.startsWith("videos/") || objectKey.contains("..")) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "objectKey no es valido"
+            );
+        }
+
+        if (!cameraRepository.existsById(request.cameraId().trim())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "La camara no existe"
             );
         }
     }
