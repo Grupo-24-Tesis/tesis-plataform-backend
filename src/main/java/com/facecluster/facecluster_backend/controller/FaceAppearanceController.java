@@ -41,20 +41,11 @@ public FaceAppearanceController(
 }
 
 
-// ==========================================
-// OBTENER TODAS LAS APARICIONES
-// ==========================================
-
 @GetMapping
 public List<FaceAppearance> findAll() {
-    // Solo apariciones cuya imagen sigue en S3, con URL prefirmada
     return faceImageService.withS3Images(repository.findAll());
 }
 
-
-// ==========================================
-// OBTENER CARAS ÚNICAS CON FILTROS
-// ==========================================
 
 @GetMapping("/unique")
 public List<UniqueFaceResponse> findUniqueFaces(
@@ -72,16 +63,8 @@ public List<UniqueFaceResponse> findUniqueFaces(
         Boolean suspect
 ) {
 
-    // ==========================================
-    // OBTENER APARICIONES
-    // ==========================================
-
     List<FaceAppearance> appearances;
 
-
-    // ==========================================
-    // FILTRO DE FECHA
-    // ==========================================
 
     if (startDate != null &&
         !startDate.isBlank() &&
@@ -104,22 +87,12 @@ public List<UniqueFaceResponse> findUniqueFaces(
 
     } else {
 
-        // Sin filtro de fecha
         appearances = repository.findAll();
     }
 
 
-    // ==========================================
-    // SOLO IMÁGENES QUE EXISTEN EN S3
-    // ==========================================
-
-    // Las personas sin ninguna imagen en el bucket no se muestran
     appearances = faceImageService.withS3Images(appearances);
 
-
-    // ==========================================
-    // AGRUPAR POR FACE ID
-    // ==========================================
 
     Map<String, List<FaceAppearance>> grouped =
             new LinkedHashMap<>();
@@ -135,10 +108,6 @@ public List<UniqueFaceResponse> findUniqueFaces(
     }
 
 
-    // ==========================================
-    // CREAR RESPUESTA
-    // ==========================================
-
     List<UniqueFaceResponse> response =
             new ArrayList<>();
 
@@ -152,29 +121,17 @@ public List<UniqueFaceResponse> findUniqueFaces(
                 entry.getValue();
 
 
-        // ==========================================
-        // CONTAR REPORTES
-        // ==========================================
-
         int reportCount =
                 reportRepository
                         .findByFaceIdsContaining(faceId)
                         .size();
 
 
-        // ==========================================
-        // VERIFICAR SOSPECHOSO
-        // ==========================================
-
         boolean isSuspect =
                 markedRepository
                         .findByFaceId(faceId)
                         .isPresent();
 
-
-        // ==========================================
-        // FILTRO: REPORTES
-        // ==========================================
 
         if (hasReports != null) {
 
@@ -187,10 +144,6 @@ public List<UniqueFaceResponse> findUniqueFaces(
         }
 
 
-        // ==========================================
-        // FILTRO: SOSPECHOSO
-        // ==========================================
-
         if (suspect != null) {
 
             if (suspect != isSuspect) {
@@ -198,10 +151,6 @@ public List<UniqueFaceResponse> findUniqueFaces(
             }
         }
 
-
-        // ==========================================
-        // AGREGAR PERSONA
-        // ==========================================
 
         response.add(
                 new UniqueFaceResponse(
@@ -218,10 +167,6 @@ public List<UniqueFaceResponse> findUniqueFaces(
 }
 
 
-// ==========================================
-// CREAR APARICIÓN
-// ==========================================
-
 @PostMapping
 @ResponseStatus(HttpStatus.CREATED)
 public FaceAppearance create(
@@ -231,10 +176,6 @@ public FaceAppearance create(
     return repository.save(body);
 }
 
-
-// ==========================================
-// RESPUESTA PARA CARAS ÚNICAS
-// ==========================================
 
 public record UniqueFaceResponse(
 

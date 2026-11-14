@@ -9,7 +9,6 @@ import java.util.List;
 public interface FaceAppearanceRepository
         extends MongoRepository<FaceAppearance, String> {
 
-    // Buscar apariciones dentro de un rango de fechas
     List<FaceAppearance> findByCapturedAtBetween(
             LocalDateTime start,
             LocalDateTime end

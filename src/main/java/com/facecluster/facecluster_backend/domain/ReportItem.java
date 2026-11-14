@@ -17,16 +17,12 @@ public class ReportItem {
     private String priority;
     private String description;
 
-    // Fecha y hora en que ocurrió el incidente
     private LocalDateTime incidentDate;
 
-    // Fecha y hora en que el reporte fue registrado en el sistema
     private LocalDateTime createdAt;
 
-    // Fecha y hora en que el incidente fue solucionado
     private LocalDateTime resolvedAt;
 
-    // Descripción de cómo se solucionó el incidente
     private String resolutionDescription;
 
     private List<String> faceIds;

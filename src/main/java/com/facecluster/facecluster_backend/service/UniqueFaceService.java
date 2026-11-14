@@ -41,13 +41,11 @@ public class UniqueFaceService {
                 markedRepository.findAll();
 
 
-        // FaceIds que están marcados como sospechosos
         Set<String> suspectFaceIds = markedPeople.stream()
                 .map(MarkedPerson::getFaceId)
                 .collect(Collectors.toSet());
 
 
-        // Contamos en cuántos reportes aparece cada faceId
         Map<String, Long> reportCounts = new HashMap<>();
 
         for (ReportItem report : reports) {
@@ -56,8 +54,6 @@ public class UniqueFaceService {
                 continue;
             }
 
-            // Evitamos contar dos veces la misma persona
-            // si accidentalmente aparece repetida dentro del mismo reporte
             Set<String> uniqueFaceIds =
                     new HashSet<>(report.getFaceIds());
 
@@ -72,7 +68,6 @@ public class UniqueFaceService {
         }
 
 
-        // Agrupamos las apariciones por faceId
         Map<String, FaceAppearance> representativeFaces =
                 appearances.stream()
                         .collect(Collectors.toMap(

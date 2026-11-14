@@ -21,34 +21,20 @@ public class ReportController {
     }
 
 
-    // =========================
-    // OBTENER TODOS LOS REPORTES
-    // =========================
-
     @GetMapping
     public List<ReportItem> all() {
         return repo.findAll();
     }
 
 
-    // =========================
-    // CREAR REPORTE
-    // =========================
-
     @PostMapping
     public ReportItem create(@RequestBody ReportItem body) {
 
-        // Fecha de creación automática
         body.setCreatedAt(LocalDateTime.now());
 
-        // incidentDate viene desde el frontend
         return repo.save(body);
     }
 
-
-    // =========================
-    // FILTRAR REPORTES
-    // =========================
 
     @GetMapping("/filter")
     public List<ReportItem> filter(
@@ -70,10 +56,6 @@ public class ReportController {
 
     ) {
 
-        // ---------------------------------
-        // SIN FILTROS
-        // ---------------------------------
-
         if (status == null &&
             date == null &&
             startDate == null &&
@@ -83,17 +65,9 @@ public class ReportController {
         }
 
 
-        // ---------------------------------
-        // CONVERTIR FECHAS
-        // ---------------------------------
-
         LocalDateTime start = null;
         LocalDateTime end = null;
 
-
-        // =================================
-        // DÍA ESPECÍFICO
-        // =================================
 
         if (date != null && !date.isBlank()) {
 
@@ -107,10 +81,6 @@ public class ReportController {
                     selectedDate.atTime(LocalTime.MAX);
         }
 
-
-        // =================================
-        // RANGO DE FECHAS
-        // =================================
 
         else if (
                 startDate != null &&
@@ -129,17 +99,9 @@ public class ReportController {
         }
 
 
-        // =================================
-        // DETERMINAR TIPO DE FECHA
-        // =================================
-
         boolean resolutionDate =
                 "resolucion".equalsIgnoreCase(dateType);
 
-
-        // =================================
-        // ESTADO + FECHA
-        // =================================
 
         if (
                 status != null &&
@@ -167,10 +129,6 @@ public class ReportController {
         }
 
 
-        // =================================
-        // SOLO ESTADO
-        // =================================
-
         if (
                 status != null &&
                 !status.isBlank()
@@ -179,10 +137,6 @@ public class ReportController {
             return repo.findByStatus(status);
         }
 
-
-        // =================================
-        // SOLO FECHA
-        // =================================
 
         if (
                 start != null &&
@@ -206,17 +160,9 @@ public class ReportController {
         }
 
 
-        // ---------------------------------
-        // FALLBACK
-        // ---------------------------------
-
         return repo.findAll();
     }
 
-
-    // =========================
-    // ACTUALIZAR ESTADO
-    // =========================
 
     @PutMapping("/{id}/status")
     public ReportItem updateStatus(
@@ -241,10 +187,6 @@ public class ReportController {
         );
 
 
-        // =================================
-        // SI SE ESTÁ RESOLVIENDO
-        // =================================
-
         if (
                 "solucionado"
                         .equals(request.status())
@@ -263,10 +205,6 @@ public class ReportController {
         return repo.save(report);
     }
 
-
-    // =========================
-    // REQUEST PARA ACTUALIZAR
-    // =========================
 
     public record StatusRequest(
 

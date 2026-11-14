@@ -8,19 +8,15 @@ import java.util.List;
 
 public interface ReportRepository extends MongoRepository<ReportItem, String> {
 
-    // Buscar reportes relacionados con una cara
     List<ReportItem> findByFaceIdsContaining(String faceId);
 
-    // Filtrar por estado
     List<ReportItem> findByStatus(String status);
 
-    // Filtrar por rango de fecha del incidente
     List<ReportItem> findByIncidentDateBetween(
             LocalDateTime start,
             LocalDateTime end
     );
 
-    // Filtrar por estado + rango de fecha
     List<ReportItem> findByStatusAndIncidentDateBetween(
             String status,
             LocalDateTime start,

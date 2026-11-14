@@ -22,15 +22,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * S3 es la única fuente de las imágenes de rostros.
- *
- * Mongo guarda la URL permanente del objeto (la escribe el modelo). Antes de
- * responder al frontend, se descartan las apariciones cuya imagen ya no existe
- * en el bucket (o que no viene de S3) y el resto recibe una URL prefirmada de
- * corta duración, así el bucket puede ser privado y el navegador no reutiliza
- * imágenes borradas.
- */
 @Service
 public class FaceImageService {
 
@@ -57,11 +48,6 @@ public class FaceImageService {
         this.urlDuration = Duration.ofMinutes(expirationMinutes);
     }
 
-    /**
-     * Devuelve copias de las apariciones cuya imagen existe en S3, con la
-     * frameUrl reemplazada por una URL prefirmada. Las entidades originales no
-     * se modifican.
-     */
     public List<FaceAppearance> withS3Images(List<FaceAppearance> appearances) {
         Set<String> existingKeys = listFaceKeys();
         List<FaceAppearance> result = new ArrayList<>();
@@ -110,11 +96,6 @@ public class FaceImageService {
         }
     }
 
-    /**
-     * Extrae la key de una URL virtual-hosted de este bucket, por ejemplo
-     * https://bucket.s3.us-east-2.amazonaws.com/faces/job/4.jpg. Devuelve null
-     * para cualquier otra URL.
-     */
     private String toObjectKey(String frameUrl) {
         if (frameUrl == null || frameUrl.isBlank()) {
             return null;

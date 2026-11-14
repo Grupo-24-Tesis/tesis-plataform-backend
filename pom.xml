@@ -20,7 +20,6 @@
   <properties>
     <java.version>21</java.version>
     <aws.sdk.version>2.55.7</aws.sdk.version>
-    <!-- Fuerza la actualización de HttpClient y HttpCore a versiones compatibles entre sí -->
     <httpclient5.version>5.4.1</httpclient5.version>
     <httpcore5.version>5.3.2</httpcore5.version>
   </properties>
@@ -39,13 +38,11 @@
   </dependencyManagement>
 
   <dependencies>
-    <!-- Web / REST -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>
     </dependency>
 
-    <!-- AWS SDK Dependencies -->
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>s3</artifactId>
@@ -56,26 +53,22 @@
       <artifactId>sqs</artifactId>
     </dependency>
 
-    <!-- MongoDB -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-data-mongodb</artifactId>
     </dependency>
 
-    <!-- Lombok -->
     <dependency>
       <groupId>org.projectlombok</groupId>
       <artifactId>lombok</artifactId>
       <optional>true</optional>
     </dependency>
 
-    <!-- Apache HttpClient 5 (Se gestiona la versión limpia desde las properties arriba) -->
     <dependency>
       <groupId>org.apache.httpcomponents.client5</groupId>
       <artifactId>httpclient5</artifactId>
     </dependency>
 
-    <!-- Testing -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
