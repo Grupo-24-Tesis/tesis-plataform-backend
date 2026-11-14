@@ -7,7 +7,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/cameras")
-@CrossOrigin(origins = "*")
 public class CameraController {
     private final CameraRepository repo;
     public CameraController(CameraRepository repo) { this.repo = repo; }

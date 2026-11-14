@@ -7,7 +7,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/marked")
-@CrossOrigin(origins = "*")
 public class MarkedController {
 
     private final MarkedRepository repo;

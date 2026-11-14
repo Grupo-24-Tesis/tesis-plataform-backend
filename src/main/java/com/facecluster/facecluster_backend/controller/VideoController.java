@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/videos")
-@CrossOrigin(origins = "*")
 public class VideoController {
 
     private final S3UploadService s3UploadService;

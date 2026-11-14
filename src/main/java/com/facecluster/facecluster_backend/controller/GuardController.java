@@ -7,7 +7,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/guards")
-@CrossOrigin(origins = "*")
 public class GuardController {
     private final GuardRepository repo;
     public GuardController(GuardRepository repo) { this.repo = repo; }

@@ -1,17 +1,18 @@
 package com.facecluster.facecluster_backend.controller;
 
+import com.facecluster.facecluster_backend.api.DateRangeParams;
+import com.facecluster.facecluster_backend.api.DateRangeParams.DateRange;
 import com.facecluster.facecluster_backend.domain.ReportItem;
 import com.facecluster.facecluster_backend.repository.ReportRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/reports")
-@CrossOrigin(origins = "*")
 public class ReportController {
 
     private final ReportRepository repo;
@@ -65,102 +66,69 @@ public class ReportController {
         }
 
 
-        LocalDateTime start = null;
-        LocalDateTime end = null;
+        boolean hasDate = date != null && !date.isBlank();
 
+        DateRange range = hasDate
+                ? DateRangeParams.parse(date, date)
+                : DateRangeParams.parse(startDate, endDate);
 
-        if (date != null && !date.isBlank()) {
-
-            LocalDate selectedDate =
-                    LocalDate.parse(date);
-
-            start =
-                    selectedDate.atStartOfDay();
-
-            end =
-                    selectedDate.atTime(LocalTime.MAX);
-        }
-
-
-        else if (
-                startDate != null &&
-                !startDate.isBlank() &&
-                endDate != null &&
-                !endDate.isBlank()
-        ) {
-
-            start =
-                    LocalDate.parse(startDate)
-                            .atStartOfDay();
-
-            end =
-                    LocalDate.parse(endDate)
-                            .atTime(LocalTime.MAX);
-        }
-
+        boolean hasStatus = status != null && !status.isBlank();
 
         boolean resolutionDate =
                 "resolucion".equalsIgnoreCase(dateType);
 
+        if (range.isEmpty()) {
 
-        if (
-                status != null &&
-                !status.isBlank() &&
-                start != null &&
-                end != null
-        ) {
-
-            if (resolutionDate) {
-
-                return repo.findByStatusAndResolvedAtBetween(
-                        status,
-                        start,
-                        end
-                );
-
-            } else {
-
-                return repo.findByStatusAndIncidentDateBetween(
-                        status,
-                        start,
-                        end
-                );
-            }
+            return hasStatus ? repo.findByStatus(status) : repo.findAll();
         }
 
+        return resolutionDate
+                ? filterByResolvedAt(hasStatus ? status : null, range)
+                : filterByIncidentDate(hasStatus ? status : null, range);
+    }
 
-        if (
-                status != null &&
-                !status.isBlank()
-        ) {
 
-            return repo.findByStatus(status);
+    private List<ReportItem> filterByIncidentDate(String status, DateRange range) {
+
+        if (range.hasFrom() && range.hasTo()) {
+
+            return status != null
+                    ? repo.findByStatusAndIncidentDateBetween(status, range.from(), range.to())
+                    : repo.findByIncidentDateBetween(range.from(), range.to());
         }
 
+        if (range.hasFrom()) {
 
-        if (
-                start != null &&
-                end != null
-        ) {
-
-            if (resolutionDate) {
-
-                return repo.findByResolvedAtBetween(
-                        start,
-                        end
-                );
-
-            } else {
-
-                return repo.findByIncidentDateBetween(
-                        start,
-                        end
-                );
-            }
+            return status != null
+                    ? repo.findByStatusAndIncidentDateGreaterThanEqual(status, range.from())
+                    : repo.findByIncidentDateGreaterThanEqual(range.from());
         }
 
+        return status != null
+                ? repo.findByStatusAndIncidentDateLessThanEqual(status, range.to())
+                : repo.findByIncidentDateLessThanEqual(range.to());
+    }
 
-        return repo.findAll();
+
+    private List<ReportItem> filterByResolvedAt(String status, DateRange range) {
+
+        if (range.hasFrom() && range.hasTo()) {
+
+            return status != null
+                    ? repo.findByStatusAndResolvedAtBetween(status, range.from(), range.to())
+                    : repo.findByResolvedAtBetween(range.from(), range.to());
+        }
+
+        if (range.hasFrom()) {
+
+            return status != null
+                    ? repo.findByStatusAndResolvedAtGreaterThanEqual(status, range.from())
+                    : repo.findByResolvedAtGreaterThanEqual(range.from());
+        }
+
+        return status != null
+                ? repo.findByStatusAndResolvedAtLessThanEqual(status, range.to())
+                : repo.findByResolvedAtLessThanEqual(range.to());
     }
 
 
@@ -176,7 +144,8 @@ public class ReportController {
         ReportItem report =
                 repo.findById(id)
                         .orElseThrow(() ->
-                                new RuntimeException(
+                                new ResponseStatusException(
+                                        HttpStatus.NOT_FOUND,
                                         "Reporte no encontrado"
                                 )
                         );

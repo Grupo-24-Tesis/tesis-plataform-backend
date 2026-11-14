@@ -32,4 +32,20 @@ List<ReportItem> findByStatusAndResolvedAtBetween(
         LocalDateTime start,
         LocalDateTime end
 );
+
+    List<ReportItem> findByIncidentDateGreaterThanEqual(LocalDateTime start);
+
+    List<ReportItem> findByIncidentDateLessThanEqual(LocalDateTime end);
+
+    List<ReportItem> findByStatusAndIncidentDateGreaterThanEqual(String status, LocalDateTime start);
+
+    List<ReportItem> findByStatusAndIncidentDateLessThanEqual(String status, LocalDateTime end);
+
+    List<ReportItem> findByResolvedAtGreaterThanEqual(LocalDateTime start);
+
+    List<ReportItem> findByResolvedAtLessThanEqual(LocalDateTime end);
+
+    List<ReportItem> findByStatusAndResolvedAtGreaterThanEqual(String status, LocalDateTime start);
+
+    List<ReportItem> findByStatusAndResolvedAtLessThanEqual(String status, LocalDateTime end);
 }

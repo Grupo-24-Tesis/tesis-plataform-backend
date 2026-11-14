@@ -13,4 +13,8 @@ public interface FaceAppearanceRepository
             LocalDateTime start,
             LocalDateTime end
     );
+
+    List<FaceAppearance> findByCapturedAtGreaterThanEqual(LocalDateTime start);
+
+    List<FaceAppearance> findByCapturedAtLessThanEqual(LocalDateTime end);
 }

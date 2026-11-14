@@ -1,5 +1,7 @@
 package com.facecluster.facecluster_backend.controller;
 
+import com.facecluster.facecluster_backend.api.DateRangeParams;
+import com.facecluster.facecluster_backend.api.DateRangeParams.DateRange;
 import com.facecluster.facecluster_backend.domain.FaceAppearance;
 import com.facecluster.facecluster_backend.repository.FaceAppearanceRepository;
 import com.facecluster.facecluster_backend.repository.MarkedRepository;
@@ -9,9 +11,6 @@ import com.facecluster.facecluster_backend.service.FaceImageService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,7 +18,6 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/face-appearances")
-@CrossOrigin(origins = "*")
 public class FaceAppearanceController {
 
 
@@ -63,26 +61,31 @@ public List<UniqueFaceResponse> findUniqueFaces(
         Boolean suspect
 ) {
 
+    DateRange range =
+            DateRangeParams.parse(startDate, endDate);
+
     List<FaceAppearance> appearances;
 
-
-    if (startDate != null &&
-        !startDate.isBlank() &&
-        endDate != null &&
-        !endDate.isBlank()) {
-
-        LocalDateTime start =
-                LocalDate.parse(startDate)
-                        .atStartOfDay();
-
-        LocalDateTime end =
-                LocalDate.parse(endDate)
-                        .atTime(LocalTime.MAX);
+    if (range.hasFrom() && range.hasTo()) {
 
         appearances =
                 repository.findByCapturedAtBetween(
-                        start,
-                        end
+                        range.from(),
+                        range.to()
+                );
+
+    } else if (range.hasFrom()) {
+
+        appearances =
+                repository.findByCapturedAtGreaterThanEqual(
+                        range.from()
+                );
+
+    } else if (range.hasTo()) {
+
+        appearances =
+                repository.findByCapturedAtLessThanEqual(
+                        range.to()
                 );
 
     } else {
