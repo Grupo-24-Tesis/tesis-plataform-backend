@@ -2,7 +2,9 @@ package com.facecluster.facecluster_backend.controller;
 
 import com.facecluster.facecluster_backend.domain.MarkedPerson;
 import com.facecluster.facecluster_backend.repository.MarkedRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 
 @RestController
@@ -22,6 +24,15 @@ public class MarkedController {
 
     @PostMapping
     public MarkedPerson create(@RequestBody MarkedPerson body) {
+        if (body.getFaceId() == null || body.getFaceId().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "faceId es obligatorio");
+        }
+
+        if (repo.existsByFaceId(body.getFaceId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "La deteccion ya esta marcada");
+        }
+
+        body.setId(null);
         return repo.save(body);
     }
 

@@ -232,6 +232,8 @@ public class VideoJobService {
             }
 
             FaceAppearance appearance = new FaceAppearance();
+            appearance.setId(result.faceId());
+            appearance.setJobId(job.getId());
             appearance.setFaceId(result.faceId());
             appearance.setTimestamp(result.timestamp());
             appearance.setFrameUrl(result.frameUrl());

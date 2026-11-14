@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -142,11 +143,40 @@ class VideoJobServiceTest {
         ArgumentCaptor<List<FaceAppearance>> saved = ArgumentCaptor.forClass(List.class);
         verify(faceAppearanceRepository).saveAll(saved.capture());
         FaceAppearance appearance = saved.getValue().get(0);
+        assertThat(appearance.getId()).isEqualTo("job-1_4");
+        assertThat(appearance.getJobId()).isEqualTo("job-1");
         assertThat(appearance.getFaceId()).isEqualTo("job-1_4");
         assertThat(appearance.getCameraId()).isEqualTo("CAM-01");
         assertThat(appearance.getTimestamp()).isEqualTo("00:01:23");
         assertThat(appearance.getCapturedAt()).hasToString("2026-10-16T10:05:21");
         assertThat(job.getStatus()).isEqualTo(VideoJobStatus.COMPLETED);
+    }
+
+    @Test
+    void redeliveredCompletedEventAfterJobSaveFailureStoresAppearancesWithTheSameIds() {
+        VideoJob firstDelivery = job("job-1", VideoJobStatus.PROCESSING);
+        VideoJob secondDelivery = job("job-1", VideoJobStatus.PROCESSING);
+        when(videoJobRepository.findById("job-1"))
+                .thenReturn(Optional.of(firstDelivery), Optional.of(secondDelivery));
+        when(videoJobRepository.save(firstDelivery))
+                .thenThrow(new IllegalStateException("fallo al guardar el job"));
+        VideoProcessingEvent event = completed(NOW, List.of(
+                new FaceAppearanceResult("job-1_4", "00:01:23", "url-4", null),
+                new FaceAppearanceResult("job-1_7", "00:02:10", "url-7", null)
+        ));
+
+        assertThatThrownBy(() -> service.applyWorkerEvent(event))
+                .isInstanceOf(IllegalStateException.class);
+        service.applyWorkerEvent(event);
+
+        ArgumentCaptor<List<FaceAppearance>> saved = ArgumentCaptor.forClass(List.class);
+        verify(faceAppearanceRepository, times(2)).saveAll(saved.capture());
+        List<List<String>> savedIds = saved.getAllValues().stream()
+                .map(list -> list.stream().map(FaceAppearance::getId).toList())
+                .toList();
+        assertThat(savedIds.get(0)).containsExactly("job-1_4", "job-1_7");
+        assertThat(savedIds.get(1)).isEqualTo(savedIds.get(0));
+        assertThat(secondDelivery.getStatus()).isEqualTo(VideoJobStatus.COMPLETED);
     }
 
     @Test

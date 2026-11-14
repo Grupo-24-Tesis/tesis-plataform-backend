@@ -132,8 +132,7 @@ public List<UniqueFaceResponse> findUniqueFaces(
 
         boolean isSuspect =
                 markedRepository
-                        .findByFaceId(faceId)
-                        .isPresent();
+                        .existsByFaceId(faceId);
 
 
         if (hasReports != null) {

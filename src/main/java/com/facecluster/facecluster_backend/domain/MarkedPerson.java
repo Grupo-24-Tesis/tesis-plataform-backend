@@ -1,12 +1,14 @@
 package com.facecluster.facecluster_backend.domain;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 @Document(collection = "marked")
 public class MarkedPerson {
     @Id
     private String id;
+    @Indexed(unique = true)
     private String faceId;
     private String reason;
 
