@@ -147,6 +147,6 @@ public class VideoJob {
             return null;
         }
 
-        return Duration.between(from, to).getSeconds();
+        return Math.max(0, Duration.between(from, to).getSeconds());
     }
 }

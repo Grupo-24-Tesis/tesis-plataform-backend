@@ -68,14 +68,16 @@ public class VideoJobMetricsService {
     }
 
     private Double average(List<VideoJob> jobs, Function<VideoJob, ? extends Number> value) {
-        return jobs.stream()
+        List<Double> values = jobs.stream()
                 .map(value)
                 .filter(number -> number != null)
-                .mapToDouble(Number::doubleValue)
-                .average()
-                .stream()
-                .boxed()
-                .findFirst()
-                .orElse(null);
+                .map(Number::doubleValue)
+                .toList();
+
+        if (values.isEmpty()) {
+            return null;
+        }
+
+        return values.stream().mapToDouble(Double::doubleValue).sum() / values.size();
     }
 }

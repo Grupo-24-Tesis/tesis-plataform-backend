@@ -473,12 +473,23 @@ class VideoJobServiceTest {
 
     @Test
     void completedEventWithoutSentAtUsesTheClock() {
+        Instant clockInstant = Instant.parse("2026-11-14T15:30:00Z");
+        service = new VideoJobService(
+                videoJobRepository,
+                faceAppearanceRepository,
+                cameraRepository,
+                sqsVideoJobPublisher,
+                BUCKET,
+                Clock.fixed(clockInstant, ZoneId.of("America/Bogota")),
+                UPLOADED_TIMEOUT_MINUTES,
+                QUEUED_TIMEOUT_MINUTES,
+                PROCESSING_TIMEOUT_MINUTES
+        );
         VideoJob job = storedJob(VideoJobStatus.PROCESSING);
-        Instant before = Instant.now();
 
         service.applyWorkerEvent(completed(null, List.of()));
 
-        assertThat(job.getCompletedAt()).isBetween(before, Instant.now());
+        assertThat(job.getCompletedAt()).isEqualTo(clockInstant);
         assertThat(job.getFaceCount()).isZero();
     }
 
@@ -497,6 +508,19 @@ class VideoJobServiceTest {
         assertThat(response.faceCount()).isEqualTo(3);
         assertThat(response.queueWaitSeconds()).isEqualTo(12L);
         assertThat(response.processingSeconds()).isEqualTo(80L);
+    }
+
+    @Test
+    void jobResponseClampsNegativeSecondsToZero() {
+        VideoJob job = storedJob(VideoJobStatus.COMPLETED);
+        job.setCreatedAt(NOW);
+        job.setStartedAt(NOW.minusSeconds(5));
+        job.setCompletedAt(NOW.minusSeconds(20));
+
+        VideoJobResponse response = service.getJobById("job-1");
+
+        assertThat(response.queueWaitSeconds()).isZero();
+        assertThat(response.processingSeconds()).isZero();
     }
 
     @Test
