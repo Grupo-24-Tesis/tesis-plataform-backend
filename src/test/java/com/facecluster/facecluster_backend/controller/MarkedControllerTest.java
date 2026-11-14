@@ -6,6 +6,7 @@ import com.facecluster.facecluster_backend.repository.MarkedRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -46,6 +47,19 @@ class MarkedControllerTest {
                 .andExpect(jsonPath("$.message").value("La deteccion ya esta marcada"));
 
         verify(repository, never()).save(any());
+    }
+
+    @Test
+    void indiceUnicoDuplicadoAlGuardarResponde409() throws Exception {
+        when(repository.existsByFaceId("job-1_4")).thenReturn(false);
+        when(repository.save(any(MarkedPerson.class)))
+                .thenThrow(new DuplicateKeyException("duplicado"));
+
+        mockMvc.perform(post("/api/marked")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"faceId\":\"job-1_4\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409));
     }
 
     @Test

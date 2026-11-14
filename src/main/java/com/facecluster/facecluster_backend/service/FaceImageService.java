@@ -138,6 +138,7 @@ public class FaceImageService {
     private FaceAppearance copyWithUrl(FaceAppearance source, String frameUrl) {
         FaceAppearance copy = new FaceAppearance();
         copy.setId(source.getId());
+        copy.setJobId(source.getJobId());
         copy.setFaceId(source.getFaceId());
         copy.setTimestamp(source.getTimestamp());
         copy.setCameraId(source.getCameraId());
