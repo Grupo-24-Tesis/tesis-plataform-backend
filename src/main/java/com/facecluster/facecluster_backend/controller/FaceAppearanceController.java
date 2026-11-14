@@ -8,6 +8,7 @@ import com.facecluster.facecluster_backend.repository.MarkedRepository;
 import com.facecluster.facecluster_backend.repository.ReportRepository;
 import com.facecluster.facecluster_backend.service.FaceImageService;
 
+import org.springframework.data.domain.Range;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -69,8 +70,7 @@ public List<UniqueFaceResponse> findUniqueFaces(
 
         appearances =
                 repository.findByCapturedAtBetween(
-                        range.from(),
-                        range.to()
+                        Range.closed(range.from(), range.to())
                 );
 
     } else if (range.hasFrom()) {

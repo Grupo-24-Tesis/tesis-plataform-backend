@@ -1,6 +1,7 @@
 package com.facecluster.facecluster_backend.repository;
 
 import com.facecluster.facecluster_backend.domain.FaceAppearance;
+import org.springframework.data.domain.Range;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
 import java.time.LocalDateTime;
@@ -11,10 +12,7 @@ public interface FaceAppearanceRepository
 
     List<FaceAppearance> findByJobIdOrderByTimestampAsc(String jobId);
 
-    List<FaceAppearance> findByCapturedAtBetween(
-            LocalDateTime start,
-            LocalDateTime end
-    );
+    List<FaceAppearance> findByCapturedAtBetween(Range<LocalDateTime> range);
 
     List<FaceAppearance> findByCapturedAtGreaterThanEqual(LocalDateTime start);
 

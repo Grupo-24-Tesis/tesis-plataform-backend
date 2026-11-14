@@ -4,6 +4,7 @@ import com.facecluster.facecluster_backend.api.DateRangeParams;
 import com.facecluster.facecluster_backend.api.DateRangeParams.DateRange;
 import com.facecluster.facecluster_backend.domain.ReportItem;
 import com.facecluster.facecluster_backend.repository.ReportRepository;
+import org.springframework.data.domain.Range;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -114,8 +115,8 @@ public class ReportController {
         if (range.hasFrom() && range.hasTo()) {
 
             return status != null
-                    ? repo.findByStatusAndIncidentDateBetween(status, range.from(), range.to())
-                    : repo.findByIncidentDateBetween(range.from(), range.to());
+                    ? repo.findByStatusAndIncidentDateBetween(status, Range.closed(range.from(), range.to()))
+                    : repo.findByIncidentDateBetween(Range.closed(range.from(), range.to()));
         }
 
         if (range.hasFrom()) {
@@ -136,8 +137,8 @@ public class ReportController {
         if (range.hasFrom() && range.hasTo()) {
 
             return status != null
-                    ? repo.findByStatusAndResolvedAtBetween(status, range.from(), range.to())
-                    : repo.findByResolvedAtBetween(range.from(), range.to());
+                    ? repo.findByStatusAndResolvedAtBetween(status, Range.closed(range.from(), range.to()))
+                    : repo.findByResolvedAtBetween(Range.closed(range.from(), range.to()));
         }
 
         if (range.hasFrom()) {

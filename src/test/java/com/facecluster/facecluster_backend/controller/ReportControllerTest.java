@@ -6,6 +6,7 @@ import com.facecluster.facecluster_backend.repository.ReportRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.domain.Range;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -14,14 +15,17 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -136,5 +140,41 @@ class ReportControllerTest {
         assertThat(saved.getValue().getId()).isNull();
         assertThat(saved.getValue().getCreatedAt()).hasToString("2026-10-16T10:05:21");
         assertThat(saved.getValue().getResolutionDescription()).isNull();
+    }
+
+    @Test
+    void filterByDayUsesAnInclusiveRangeOnIncidentDate() throws Exception {
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Range<LocalDateTime>> range = ArgumentCaptor.forClass(Range.class);
+        when(repository.findByIncidentDateBetween(range.capture())).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/reports/filter").param("date", "2026-08-21"))
+                .andExpect(status().isOk());
+
+        assertInclusiveDay(range.getValue());
+    }
+
+    @Test
+    void filterByStatusAndResolutionDayUsesAnInclusiveRangeOnResolvedAt() throws Exception {
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Range<LocalDateTime>> range = ArgumentCaptor.forClass(Range.class);
+        when(repository.findByStatusAndResolvedAtBetween(eq("solucionado"), range.capture()))
+                .thenReturn(List.of());
+
+        mockMvc.perform(get("/api/reports/filter")
+                        .param("status", "solucionado")
+                        .param("startDate", "2026-08-21")
+                        .param("endDate", "2026-08-21")
+                        .param("dateType", "resolucion"))
+                .andExpect(status().isOk());
+
+        assertInclusiveDay(range.getValue());
+    }
+
+    private void assertInclusiveDay(Range<LocalDateTime> range) {
+        assertThat(range.getLowerBound().isInclusive()).isTrue();
+        assertThat(range.getUpperBound().isInclusive()).isTrue();
+        assertThat(range.getLowerBound().getValue()).contains(LocalDateTime.parse("2026-08-21T00:00:00"));
+        assertThat(range.getUpperBound().getValue()).contains(LocalDateTime.parse("2026-08-21T23:59:59.999999999"));
     }
 }
