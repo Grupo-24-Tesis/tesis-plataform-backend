@@ -9,6 +9,8 @@ public record VideoJobResponse(
         String objectKey,
         String cameraId,
         String status,
-        Instant createdAt
+        Instant createdAt,
+        Instant updatedAt,
+        String failureReason
 ) {
 }

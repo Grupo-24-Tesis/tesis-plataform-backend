@@ -17,8 +17,11 @@ public class VideoJob {
     private String cameraId;
     private String status;
 
+    private String failureReason;
+
     private Instant createdAt;
     private Instant updatedAt;
+    private Instant lastWorkerEventAt;
 
     public VideoJob() {
     }
@@ -85,5 +88,21 @@ public class VideoJob {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getFailureReason() {
+        return failureReason;
+    }
+
+    public void setFailureReason(String failureReason) {
+        this.failureReason = failureReason;
+    }
+
+    public Instant getLastWorkerEventAt() {
+        return lastWorkerEventAt;
+    }
+
+    public void setLastWorkerEventAt(Instant lastWorkerEventAt) {
+        this.lastWorkerEventAt = lastWorkerEventAt;
     }
 }
