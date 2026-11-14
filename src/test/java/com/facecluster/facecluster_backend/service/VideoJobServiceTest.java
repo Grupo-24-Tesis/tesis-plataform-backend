@@ -187,6 +187,41 @@ class VideoJobServiceTest {
     }
 
     @Test
+    void failedEventOlderThanLastWorkerEventIsIgnored() {
+        VideoJob job = storedJob(VideoJobStatus.PROCESSING);
+        job.setLastWorkerEventAt(NOW);
+
+        service.applyWorkerEvent(failed(NOW.minusSeconds(5), "tarde"));
+
+        assertThat(job.getStatus()).isEqualTo(VideoJobStatus.PROCESSING);
+        assertThat(job.getFailureReason()).isNull();
+        verify(videoJobRepository, never()).save(any());
+    }
+
+    @Test
+    void failedEventWithSameSentAtAsLastWorkerEventIsIgnored() {
+        VideoJob job = storedJob(VideoJobStatus.PROCESSING);
+        job.setLastWorkerEventAt(NOW);
+
+        service.applyWorkerEvent(failed(NOW, "repetido"));
+
+        assertThat(job.getStatus()).isEqualTo(VideoJobStatus.PROCESSING);
+        verify(videoJobRepository, never()).save(any());
+    }
+
+    @Test
+    void failedEventNewerThanLastWorkerEventIsApplied() {
+        VideoJob job = storedJob(VideoJobStatus.PROCESSING);
+        job.setLastWorkerEventAt(NOW);
+
+        service.applyWorkerEvent(failed(NOW.plusSeconds(5), "error real"));
+
+        assertThat(job.getStatus()).isEqualTo(VideoJobStatus.FAILED);
+        assertThat(job.getFailureReason()).isEqualTo("error real");
+        assertThat(job.getLastWorkerEventAt()).isEqualTo(NOW.plusSeconds(5));
+    }
+
+    @Test
     void completedEventStoresAppearancesWithTheJobCamera() {
         VideoJob job = storedJob(VideoJobStatus.PROCESSING);
 
@@ -477,17 +512,7 @@ class VideoJobServiceTest {
     @Test
     void completedEventWithoutSentAtUsesTheClock() {
         Instant clockInstant = Instant.parse("2026-11-14T15:30:00Z");
-        service = new VideoJobService(
-                videoJobRepository,
-                faceAppearanceRepository,
-                cameraRepository,
-                sqsVideoJobPublisher,
-                BUCKET,
-                Clock.fixed(clockInstant, ZoneId.of("America/Bogota")),
-                UPLOADED_TIMEOUT_MINUTES,
-                QUEUED_TIMEOUT_MINUTES,
-                PROCESSING_TIMEOUT_MINUTES
-        );
+        useFixedClock(clockInstant);
         VideoJob job = storedJob(VideoJobStatus.PROCESSING);
 
         service.applyWorkerEvent(completed(null, List.of()));
@@ -627,7 +652,8 @@ class VideoJobServiceTest {
             assertThat(job.getStartedAt()).isNull();
             assertThat(job.getCompletedAt()).isNull();
             assertThat(job.getFaceCount()).isNull();
-            assertThat(job.getLastWorkerEventAt()).isNull();
+            assertThat(job.getLastWorkerEventAt()).isAfter(NOW.minus(1, ChronoUnit.HOURS));
+            assertThat(job.getQueuedAt()).isNotNull();
             assertThat(job.getUpdatedAt()).isAfter(NOW.minus(1, ChronoUnit.HOURS));
         }
 
@@ -653,6 +679,78 @@ class VideoJobServiceTest {
     }
 
     @Test
+    void uploadSetsQueuedAtFromTheClock() {
+        useFixedClock(NOW);
+        when(cameraRepository.existsById("CAM-01")).thenReturn(true);
+        when(videoJobRepository.save(any(VideoJob.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.registerUploadedVideo(uploadRequest());
+
+        ArgumentCaptor<VideoJob> saved = ArgumentCaptor.forClass(VideoJob.class);
+        verify(videoJobRepository, times(2)).save(saved.capture());
+        assertThat(saved.getValue().getStatus()).isEqualTo(VideoJobStatus.QUEUED);
+        assertThat(saved.getValue().getQueuedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void retryMarksTheRetryInstantAsLastWorkerEventAndQueuedAt() {
+        useFixedClock(NOW);
+        VideoJob job = failedJob(VideoJobStatus.FAILED);
+        when(videoJobRepository.save(any(VideoJob.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.retryJob("job-1");
+
+        assertThat(job.getLastWorkerEventAt()).isEqualTo(NOW);
+        assertThat(job.getQueuedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void startedEventAfterRetryMeasuresQueueWaitFromTheRetry() {
+        useFixedClock(NOW);
+        VideoJob job = failedJob(VideoJobStatus.FAILED);
+        when(videoJobRepository.save(any(VideoJob.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.retryJob("job-1");
+        service.applyWorkerEvent(started(NOW.plusSeconds(30)));
+
+        VideoJobResponse response = service.getJobById("job-1");
+        assertThat(job.getStatus()).isEqualTo(VideoJobStatus.PROCESSING);
+        assertThat(response.queueWaitSeconds()).isEqualTo(30L);
+    }
+
+    @Test
+    void redeliveredEventsOfThePreviousAttemptAreIgnoredAfterRetry() {
+        useFixedClock(NOW);
+        VideoJob job = failedJob(VideoJobStatus.FAILED);
+        when(videoJobRepository.save(any(VideoJob.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.retryJob("job-1");
+        service.applyWorkerEvent(started(NOW.minus(2, ChronoUnit.HOURS)));
+        service.applyWorkerEvent(failed(NOW.minus(1, ChronoUnit.HOURS), "fallo anterior"));
+
+        assertThat(job.getStatus()).isEqualTo(VideoJobStatus.QUEUED);
+        assertThat(job.getStartedAt()).isNull();
+        assertThat(job.getFailureReason()).isNull();
+        verify(videoJobRepository, times(1)).save(job);
+    }
+
+    @Test
+    void jobResponseMeasuresQueueWaitFromQueuedAtWhenPresent() {
+        VideoJob job = storedJob(VideoJobStatus.PROCESSING);
+        job.setCreatedAt(NOW.minus(1, ChronoUnit.DAYS));
+        job.setQueuedAt(NOW);
+        job.setStartedAt(NOW.plusSeconds(7));
+
+        VideoJobResponse response = service.getJobById("job-1");
+
+        assertThat(response.queueWaitSeconds()).isEqualTo(7L);
+    }
+
+    @Test
     void retryPublishFailureMarksQueueError() {
         VideoJob job = failedJob(VideoJobStatus.FAILED);
         when(videoJobRepository.save(any(VideoJob.class)))
@@ -668,6 +766,20 @@ class VideoJobServiceTest {
         assertThat(job.getStatus()).isEqualTo(VideoJobStatus.QUEUE_ERROR);
         verify(faceAppearanceRepository).deleteByJobId("job-1");
         verify(videoJobRepository).save(job);
+    }
+
+    private void useFixedClock(Instant instant) {
+        service = new VideoJobService(
+                videoJobRepository,
+                faceAppearanceRepository,
+                cameraRepository,
+                sqsVideoJobPublisher,
+                BUCKET,
+                Clock.fixed(instant, ZoneId.of("America/Bogota")),
+                UPLOADED_TIMEOUT_MINUTES,
+                QUEUED_TIMEOUT_MINUTES,
+                PROCESSING_TIMEOUT_MINUTES
+        );
     }
 
     private VideoJob failedJob(String status) {

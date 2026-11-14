@@ -22,6 +22,7 @@ public class VideoJob {
 
     private Instant createdAt;
     private Instant updatedAt;
+    private Instant queuedAt;
     private Instant lastWorkerEventAt;
     private Instant startedAt;
     private Instant completedAt;
@@ -94,6 +95,14 @@ public class VideoJob {
         this.updatedAt = updatedAt;
     }
 
+    public Instant getQueuedAt() {
+        return queuedAt;
+    }
+
+    public void setQueuedAt(Instant queuedAt) {
+        this.queuedAt = queuedAt;
+    }
+
     public String getFailureReason() {
         return failureReason;
     }
@@ -135,7 +144,7 @@ public class VideoJob {
     }
 
     public Long queueWaitSeconds() {
-        return secondsBetween(createdAt, startedAt);
+        return secondsBetween(queuedAt != null ? queuedAt : createdAt, startedAt);
     }
 
     public Long processingSeconds() {

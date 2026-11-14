@@ -100,7 +100,7 @@ public class VideoJobService {
         job.setStartedAt(null);
         job.setCompletedAt(null);
         job.setFaceCount(null);
-        job.setLastWorkerEventAt(null);
+        job.setLastWorkerEventAt(Instant.now(clock));
 
         return toResponse(publishAndMarkQueued(job));
     }
@@ -117,6 +117,8 @@ public class VideoJobService {
                 detectContentType(job.getOriginalFileName()),
                 job.getCreatedAt()
         );
+
+        Instant queuedAt = Instant.now(clock);
 
         try {
             sqsVideoJobPublisher.publish(message);
@@ -135,6 +137,7 @@ public class VideoJobService {
 
         try {
             job.setStatus(VideoJobStatus.QUEUED);
+            job.setQueuedAt(queuedAt);
             job.setUpdatedAt(Instant.now());
 
             return videoJobRepository.save(job);
@@ -273,7 +276,7 @@ public class VideoJobService {
     }
 
     private void markFailed(VideoJob job, String reason, Instant sentAt) {
-        if (VideoJobStatus.COMPLETED.equals(job.getStatus())) {
+        if (VideoJobStatus.COMPLETED.equals(job.getStatus()) || isOutdated(job, sentAt)) {
             return;
         }
 
