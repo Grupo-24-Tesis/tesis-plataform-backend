@@ -8,7 +8,6 @@ import com.facecluster.facecluster_backend.repository.MarkedRepository;
 import com.facecluster.facecluster_backend.repository.ReportRepository;
 import com.facecluster.facecluster_backend.service.FaceImageService;
 
-import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -166,18 +165,6 @@ public List<UniqueFaceResponse> findUniqueFaces(
 
 
     return response;
-}
-
-
-@PostMapping
-@ResponseStatus(HttpStatus.CREATED)
-public FaceAppearance create(
-        @RequestBody FaceAppearance body
-) {
-
-    body.setId(null);
-
-    return repository.save(body);
 }
 
 

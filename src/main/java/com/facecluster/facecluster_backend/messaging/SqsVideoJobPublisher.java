@@ -23,7 +23,7 @@ public class SqsVideoJobPublisher {
     public SqsVideoJobPublisher(
             SqsClient sqsClient,
             ObjectMapper objectMapper,
-            @Value("${AWS_SQS_QUEUE_URL}") String queueUrl
+            @Value("${aws.sqs.queue-url}") String queueUrl
     ) {
         this.sqsClient = sqsClient;
         this.objectMapper = objectMapper;

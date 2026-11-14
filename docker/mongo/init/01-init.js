@@ -7,6 +7,3 @@ db.createUser({
     { role: "readWrite", db: process.env.MONGO_APP_DB }
   ]
 });
-
-db.createCollection("processing_results");
-db.createCollection("videos");

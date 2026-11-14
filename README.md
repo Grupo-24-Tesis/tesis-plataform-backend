@@ -64,8 +64,8 @@ Levanta dos contenedores:
 
 | Servicio | Puerto | Contenido |
 | --- | --- | --- |
-| `mongodb` | 27017 | MongoDB con los datos iniciales de `docker/mongo/init` (vigilantes, cámaras, reportes y personas marcadas de ejemplo) |
-| `backend` | 8080 | La API |
+| `mongodb` | 127.0.0.1:27017 | MongoDB con los datos iniciales de `docker/mongo/init` (vigilantes, cámaras y reportes de ejemplo, sin rostros asociados) |
+| `backend` | 127.0.0.1:8080 | La API |
 
 Comprobación:
 
@@ -160,7 +160,7 @@ imágenes borradas. Las personas sin ninguna imagen en el bucket no se muestran.
 | `GET /api/video-jobs/{jobId}/faces` | Rostros de un trabajo con URL prefirmadas. 404 si el trabajo no existe |
 | `GET /api/video-jobs/{jobId}` | Estado de un trabajo, con `failureReason` si falló |
 | `POST /api/video-jobs/{jobId}/results` | Registra resultados a mano. El pipeline no lo usa: envía sus resultados por SQS |
-| `GET /api/face-appearances`, `POST /api/face-appearances` | Apariciones de rostros |
+| `GET /api/face-appearances` | Apariciones de rostros |
 | `GET /api/face-appearances/unique` | Apariciones agrupadas por `faceId`. Filtros: `startDate`, `endDate`, `hasReports`, `suspect` |
 | `GET /api/reports`, `POST /api/reports` | Reportes de incidentes |
 | `GET /api/reports/filter` | Filtros: `status`, `date`, `startDate`, `endDate`, `dateType` |
@@ -187,11 +187,9 @@ y `marked`.
 ## Pruebas
 
 ```bash
-./mvnw test -Dtest='VideoJobServiceTest,SqsVideoResultListenerTest'
+mvn test
 ```
 
-Son pruebas unitarias de los estados de un trabajo y de la lectura de la cola de
-resultados. No necesitan MongoDB ni AWS, pero sí Java 21.
-
-`./mvnw test` también ejecuta `contextLoads`, que arranca el contexto completo de Spring y
-falla si no están definidas las variables de MongoDB.
+Ejecuta todas las pruebas, incluida `contextLoads`, que arranca el contexto completo de
+Spring con `src/test/resources/application.properties`. No necesitan MongoDB ni AWS, pero
+sí Java 21.
