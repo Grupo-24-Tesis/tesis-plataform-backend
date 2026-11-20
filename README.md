@@ -180,7 +180,7 @@ Un evento `VIDEO_PROCESSING_COMPLETED` del intento anterior puede llegar despué
 | `GET /api/video-jobs/{jobId}/faces` | Rostros de un trabajo con URL prefirmadas. 404 si el trabajo no existe |
 | `GET /api/video-jobs/{jobId}` | Estado de un trabajo, con `failureReason` si falló |
 | `GET /api/metrics/video-jobs` | Métricas de procesamiento de los videos. Filtro opcional: `cameraId` |
-| `GET /api/metrics/activity` | Detecciones por hora del día y por cámara. Filtros opcionales: `cameraId`, `startDate`, `endDate` |
+| `GET /api/metrics/activity` | Detecciones por hora del día, por cámara y por video, y su seguimiento (marcas y reportes). Filtros opcionales: `cameraId`, `startDate`, `endDate` |
 | `POST /api/video-jobs/{jobId}/retry` | Reintenta un video fallido sin volver a subirlo. 404 si el trabajo no existe, 409 si su estado no es `FAILED` ni `QUEUE_ERROR`, 503 si no se puede publicar en SQS |
 | `POST /api/video-jobs/{jobId}/results` | Registra resultados a mano. El pipeline no lo usa: envía sus resultados por SQS |
 | `GET /api/face-appearances` | Apariciones de rostros con URL prefirmadas |
@@ -221,12 +221,14 @@ Cada trabajo guarda `startedAt` (la primera vez que pasa a `PROCESSING`, con el 
 
 ## Actividad por hora
 
-`GET /api/metrics/activity?cameraId=&startDate=&endDate=` (todos opcionales; las fechas son `AAAA-MM-DD`, admiten un solo extremo y una fecha inválida responde 400) cuenta las detecciones por hora del día con una agregación de MongoDB sobre `face_appearances`. Usa solo `capturedAt` y `cameraId`; las detecciones sin `capturedAt` se ignoran. Responde:
+`GET /api/metrics/activity?cameraId=&startDate=&endDate=` (todos opcionales; las fechas son `AAAA-MM-DD`, admiten un solo extremo y una fecha inválida responde 400) cuenta las detecciones por hora del día, por cámara y por video con una agregación de MongoDB sobre `face_appearances`, agrupada por hora, `cameraId` y `jobId`. Las detecciones sin `capturedAt` se ignoran. Responde:
 
 | Campo | Contenido |
 | --- | --- |
 | `hours` | Exactamente 24 entradas `{hour, count}` de la hora 0 a la 23, con ceros donde no hay detecciones |
 | `cameras` | Entradas `{cameraId, cameraName, count}` ordenadas por `count` descendente; si la cámara ya no existe, `cameraName` es su id |
+| `videos` | Entradas `{jobId, fileName, uploadedAt, count}` ordenadas por `count` descendente y luego por `fileName`. `fileName` es el nombre original del video y `uploadedAt` el `createdAt` del trabajo; si el trabajo ya no existe, `fileName` es su `jobId` y `uploadedAt` es `null`. Las detecciones sin `jobId` cuentan en `hours` y `cameras` pero no en `videos` |
+| `followUp` | `{investigation, resolved, markedOnly, none}`: las detecciones contadas repartidas en cuatro grupos excluyentes que suman `total`. `investigation`: la detección está en al menos un reporte `investigacion`. `resolved`: está en reportes y todos son `solucionado`. `markedOnly`: está marcada y no está en ningún reporte. `none`: el resto. Las marcas y los reportes de detecciones fuera del filtro no cuentan |
 | `total` | Suma de las detecciones contadas |
 
 Spring Data MongoDB guarda un `LocalDateTime` como fecha BSON (UTC) interpretándolo en la zona horaria por defecto de la JVM, y `$hour` sin zona devuelve la hora UTC. Por eso la agregación pasa esa misma zona a `$hour`, de modo que la hora devuelta es la hora local guardada.

@@ -75,6 +75,9 @@ class MetricsControllerTest {
         ActivityResponse response = new ActivityResponse(
                 List.of(new ActivityResponse.HourCount(18, 5)),
                 List.of(new ActivityResponse.CameraCount("cam-1", "Entrada", 5)),
+                List.of(new ActivityResponse.VideoCount(
+                        "job-a", "P1E_S1_C2.mp4", java.time.Instant.parse("2026-11-17T16:21:12Z"), 5)),
+                new ActivityResponse.FollowUp(1, 2, 1, 1),
                 5
         );
         when(activityService.calculate("cam-1", range)).thenReturn(response);
@@ -86,7 +89,15 @@ class MetricsControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.total").value(5))
                 .andExpect(jsonPath("$.hours[0].hour").value(18))
-                .andExpect(jsonPath("$.cameras[0].cameraName").value("Entrada"));
+                .andExpect(jsonPath("$.cameras[0].cameraName").value("Entrada"))
+                .andExpect(jsonPath("$.videos[0].jobId").value("job-a"))
+                .andExpect(jsonPath("$.videos[0].fileName").value("P1E_S1_C2.mp4"))
+                .andExpect(jsonPath("$.videos[0].uploadedAt").exists())
+                .andExpect(jsonPath("$.videos[0].count").value(5))
+                .andExpect(jsonPath("$.followUp.investigation").value(1))
+                .andExpect(jsonPath("$.followUp.resolved").value(2))
+                .andExpect(jsonPath("$.followUp.markedOnly").value(1))
+                .andExpect(jsonPath("$.followUp.none").value(1));
     }
 
     @Test
