@@ -9,7 +9,16 @@ public record VideoResultRequest(
             String faceId,
             String timestamp,
             String frameUrl,
-            String capturedAt
+            String capturedAt,
+            String embedding
     ) {
+        public FaceAppearanceResult(
+                String faceId,
+                String timestamp,
+                String frameUrl,
+                String capturedAt
+        ) {
+            this(faceId, timestamp, frameUrl, capturedAt, null);
+        }
     }
 }

@@ -13,6 +13,13 @@ import com.facecluster.facecluster_backend.messaging.VideoProcessingEvent;
 import com.facecluster.facecluster_backend.messaging.VideoProcessingMessage;
 import com.facecluster.facecluster_backend.repository.CameraRepository;
 import com.facecluster.facecluster_backend.repository.FaceAppearanceRepository;
+import com.facecluster.facecluster_backend.repository.FaceEmbeddingRepository;
+import com.facecluster.facecluster_backend.repository.JobResultPartRepository;
+import com.facecluster.facecluster_backend.domain.FaceEmbedding;
+import com.facecluster.facecluster_backend.domain.JobResultPart;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import com.facecluster.facecluster_backend.repository.VideoJobRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,6 +53,7 @@ import static org.mockito.Mockito.when;
 class VideoJobServiceTest {
 
     private static final String BUCKET = "bucket";
+    private static final String MODEL = "GhostFaceNet";
     private static final long UPLOADED_TIMEOUT_MINUTES = 5;
     private static final long QUEUED_TIMEOUT_MINUTES = 720;
     private static final long PROCESSING_TIMEOUT_MINUTES = 15;
@@ -56,6 +64,12 @@ class VideoJobServiceTest {
 
     @Mock
     private FaceAppearanceRepository faceAppearanceRepository;
+
+    @Mock
+    private FaceEmbeddingRepository faceEmbeddingRepository;
+
+    @Mock
+    private JobResultPartRepository jobResultPartRepository;
 
     @Mock
     private CameraRepository cameraRepository;
@@ -70,13 +84,16 @@ class VideoJobServiceTest {
         service = new VideoJobService(
                 videoJobRepository,
                 faceAppearanceRepository,
+                faceEmbeddingRepository,
+                jobResultPartRepository,
                 cameraRepository,
                 sqsVideoJobPublisher,
                 BUCKET,
                 Clock.system(ZoneId.of("America/Bogota")),
                 UPLOADED_TIMEOUT_MINUTES,
                 QUEUED_TIMEOUT_MINUTES,
-                PROCESSING_TIMEOUT_MINUTES
+                PROCESSING_TIMEOUT_MINUTES,
+                MODEL
         );
     }
 
@@ -316,7 +333,7 @@ class VideoJobServiceTest {
     void eventWithUnknownTypeIsInvalid() {
         storedJob(VideoJobStatus.QUEUED);
         VideoProcessingEvent event = new VideoProcessingEvent(
-                "OTRO", "1", "job-1", NOW, null, null
+                "OTRO", "1", "job-1", NOW, null, null, null, null, null, null, null
         );
 
         assertThatThrownBy(() -> service.applyWorkerEvent(event))
@@ -768,17 +785,284 @@ class VideoJobServiceTest {
         verify(videoJobRepository).save(job);
     }
 
+    @Test
+    void singleCompletedEventStoresEmbeddings() {
+        VideoJob job = storedJob(VideoJobStatus.PROCESSING);
+
+        service.applyWorkerEvent(embeddingEvent(
+                null, null, null,
+                List.of(face("job-1_1", 2, 0, 0), face("job-1_2", 0, 3, 0))
+        ));
+
+        ArgumentCaptor<List<FaceEmbedding>> captor = ArgumentCaptor.forClass(List.class);
+        verify(faceEmbeddingRepository).saveAll(captor.capture());
+        assertThat(captor.getValue()).hasSize(2);
+        FaceEmbedding first = captor.getValue().get(0);
+        assertThat(first.getId()).isEqualTo("job-1_1:GhostFaceNet");
+        assertThat(first.getFaceId()).isEqualTo("job-1_1");
+        assertThat(first.getJobId()).isEqualTo("job-1");
+        assertThat(first.getCameraId()).isEqualTo("CAM-01");
+        assertThat(first.getModel()).isEqualTo("GhostFaceNet");
+        assertThat(first.getDimensions()).isEqualTo(3);
+        assertThat(first.getVector())
+                .isEqualTo(EmbeddingCodec.toBytes(new float[] {1, 0, 0}));
+        assertThat(job.getStatus()).isEqualTo(VideoJobStatus.COMPLETED);
+    }
+
+    @Test
+    void appearanceWithoutEmbeddingIsStored() {
+        VideoJob job = storedJob(VideoJobStatus.PROCESSING);
+
+        service.applyWorkerEvent(embeddingEvent(
+                null, null, null,
+                List.of(
+                        face("job-1_1", 1, 0, 0),
+                        new FaceAppearanceResult("job-1_2", "00:00:02", "url", null)
+                )
+        ));
+
+        ArgumentCaptor<List<FaceAppearance>> appearances = ArgumentCaptor.forClass(List.class);
+        verify(faceAppearanceRepository).saveAll(appearances.capture());
+        assertThat(appearances.getValue()).hasSize(2);
+        ArgumentCaptor<List<FaceEmbedding>> embeddings = ArgumentCaptor.forClass(List.class);
+        verify(faceEmbeddingRepository).saveAll(embeddings.capture());
+        assertThat(embeddings.getValue()).extracting(FaceEmbedding::getFaceId)
+                .containsExactly("job-1_1");
+        assertThat(job.getFaceCount()).isEqualTo(2);
+    }
+
+    @Test
+    void partsAreStoredUntilLastArrives() {
+        VideoJob job = storedJob(VideoJobStatus.PROCESSING);
+        Map<String, JobResultPart> store = partStore();
+
+        service.applyWorkerEvent(embeddingEvent(
+                "attempt-x", 1, 2, List.of(face("job-1_1", 1, 0, 0))
+        ));
+
+        assertThat(job.getStatus()).isEqualTo(VideoJobStatus.PROCESSING);
+        assertThat(store).containsOnlyKeys("job-1:attempt-x:1");
+        assertThat(job.getLastWorkerEventAt()).isEqualTo(NOW);
+        verify(faceAppearanceRepository, never()).saveAll(anyList());
+        verify(videoJobRepository).save(job);
+    }
+
+    @Test
+    void completesFromOneFullAttemptWithPartsOutOfOrderAndRepeated() {
+        VideoJob job = storedJob(VideoJobStatus.PROCESSING);
+        Map<String, JobResultPart> store = partStore();
+
+        service.applyWorkerEvent(embeddingEvent(
+                "attempt-x", 2, 2, List.of(face("job-1_3", 0, 0, 1))
+        ));
+        service.applyWorkerEvent(embeddingEvent(
+                "attempt-y", 1, 3, List.of(face("job-1_9", 0, 1, 0))
+        ));
+        service.applyWorkerEvent(embeddingEvent(
+                "attempt-x", 2, 2, List.of(face("job-1_3", 0, 0, 1))
+        ));
+        assertThat(job.getStatus()).isEqualTo(VideoJobStatus.PROCESSING);
+        service.applyWorkerEvent(embeddingEvent(
+                "attempt-x", 1, 2,
+                List.of(face("job-1_1", 1, 0, 0), face("job-1_2", 1, 1, 0))
+        ));
+
+        ArgumentCaptor<List<FaceAppearance>> captor = ArgumentCaptor.forClass(List.class);
+        verify(faceAppearanceRepository).saveAll(captor.capture());
+        assertThat(captor.getValue()).extracting(FaceAppearance::getFaceId)
+                .containsExactly("job-1_1", "job-1_2", "job-1_3");
+        assertThat(job.getStatus()).isEqualTo(VideoJobStatus.COMPLETED);
+        assertThat(job.getFaceCount()).isEqualTo(3);
+        assertThat(store).isEmpty();
+    }
+
+    @Test
+    void redeliveredLastPartAfterPartialCompletionEndsCompleted() {
+        VideoJob job = storedJob(VideoJobStatus.PROCESSING);
+        Map<String, JobResultPart> store = partStore();
+        service.applyWorkerEvent(embeddingEvent(
+                "attempt-x", 1, 2, List.of(face("job-1_1", 1, 0, 0))
+        ));
+        when(videoJobRepository.save(any(VideoJob.class)))
+                .thenThrow(new IllegalStateException("mongo caido"))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThatThrownBy(() -> service.applyWorkerEvent(embeddingEvent(
+                "attempt-x", 2, 2, List.of(face("job-1_2", 0, 1, 0))
+        ))).isInstanceOf(IllegalStateException.class);
+        assertThat(job.getStatus()).isEqualTo(VideoJobStatus.COMPLETED);
+        assertThat(store).hasSize(2);
+
+        job.setStatus(VideoJobStatus.PROCESSING);
+        service.applyWorkerEvent(embeddingEvent(
+                "attempt-x", 2, 2, List.of(face("job-1_2", 0, 1, 0))
+        ));
+
+        assertThat(job.getStatus()).isEqualTo(VideoJobStatus.COMPLETED);
+        assertThat(job.getFaceCount()).isEqualTo(2);
+        assertThat(store).isEmpty();
+        verify(faceAppearanceRepository, times(2)).saveAll(anyList());
+    }
+
+    @Test
+    void completedJobIgnoresLaterParts() {
+        VideoJob job = storedJob(VideoJobStatus.COMPLETED);
+        Map<String, JobResultPart> store = partStore();
+
+        service.applyWorkerEvent(embeddingEvent(
+                "attempt-x", 1, 2, List.of(face("job-1_1", 1, 0, 0))
+        ));
+
+        assertThat(store).isEmpty();
+        assertThat(job.getStatus()).isEqualTo(VideoJobStatus.COMPLETED);
+        verify(videoJobRepository, never()).save(any());
+        verify(faceAppearanceRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    void failedJobCompletesWhenFullAttemptArrives() {
+        VideoJob job = storedJob(VideoJobStatus.FAILED);
+        job.setFailureReason("sin respuesta");
+        partStore();
+
+        service.applyWorkerEvent(embeddingEvent(
+                "attempt-x", 1, 2, List.of(face("job-1_1", 1, 0, 0))
+        ));
+        assertThat(job.getStatus()).isEqualTo(VideoJobStatus.FAILED);
+        service.applyWorkerEvent(embeddingEvent(
+                "attempt-x", 2, 2, List.of(face("job-1_2", 0, 1, 0))
+        ));
+
+        assertThat(job.getStatus()).isEqualTo(VideoJobStatus.COMPLETED);
+        assertThat(job.getFailureReason()).isNull();
+    }
+
+    @Test
+    void rejectsWrongModel() {
+        storedJob(VideoJobStatus.PROCESSING);
+        VideoProcessingEvent event = new VideoProcessingEvent(
+                VideoProcessingEvent.COMPLETED, "1", "job-1", NOW, null,
+                List.of(face("job-1_1", 1, 0, 0)),
+                null, null, null, "OtroModelo", 3
+        );
+
+        assertThatThrownBy(() -> service.applyWorkerEvent(event))
+                .isInstanceOf(InvalidWorkerEventException.class);
+        verify(faceAppearanceRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    void rejectsWrongVectorLength() {
+        storedJob(VideoJobStatus.PROCESSING);
+        VideoProcessingEvent event = new VideoProcessingEvent(
+                VideoProcessingEvent.COMPLETED, "1", "job-1", NOW, null,
+                List.of(face("job-1_1", 1, 0, 0)),
+                null, null, null, MODEL, 4
+        );
+
+        assertThatThrownBy(() -> service.applyWorkerEvent(event))
+                .isInstanceOf(InvalidWorkerEventException.class)
+                .hasMessageContaining("job-1_1");
+        verify(faceAppearanceRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    void rejectsPartOutOfRange() {
+        storedJob(VideoJobStatus.PROCESSING);
+        partStore();
+
+        assertThatThrownBy(() -> service.applyWorkerEvent(embeddingEvent(
+                "attempt-x", 3, 2, List.of(face("job-1_1", 1, 0, 0))
+        ))).isInstanceOf(InvalidWorkerEventException.class);
+        assertThatThrownBy(() -> service.applyWorkerEvent(embeddingEvent(
+                "attempt-x", 0, 2, List.of(face("job-1_1", 1, 0, 0))
+        ))).isInstanceOf(InvalidWorkerEventException.class);
+        assertThatThrownBy(() -> service.applyWorkerEvent(embeddingEvent(
+                null, 1, 2, List.of(face("job-1_1", 1, 0, 0))
+        ))).isInstanceOf(InvalidWorkerEventException.class);
+        assertThatThrownBy(() -> service.applyWorkerEvent(embeddingEvent(
+                "attempt-x", 2, null, List.of(face("job-1_1", 1, 0, 0))
+        ))).isInstanceOf(InvalidWorkerEventException.class);
+    }
+
+    @Test
+    void rejectsFaceIdInTwoParts() {
+        storedJob(VideoJobStatus.PROCESSING);
+        Map<String, JobResultPart> store = partStore();
+        service.applyWorkerEvent(embeddingEvent(
+                "attempt-x", 1, 2, List.of(face("job-1_1", 1, 0, 0))
+        ));
+
+        assertThatThrownBy(() -> service.applyWorkerEvent(embeddingEvent(
+                "attempt-x", 2, 2, List.of(face("job-1_1", 1, 0, 0))
+        ))).isInstanceOf(InvalidWorkerEventException.class)
+                .hasMessageContaining("job-1_1");
+        assertThat(store).containsOnlyKeys("job-1:attempt-x:1");
+    }
+
+    @Test
+    void retryDeletesEmbeddingsAndParts() {
+        failedJob(VideoJobStatus.FAILED);
+        when(videoJobRepository.save(any(VideoJob.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.retryJob("job-1");
+
+        verify(faceEmbeddingRepository).deleteByJobId("job-1");
+        verify(jobResultPartRepository).deleteByJobId("job-1");
+    }
+
+    private Map<String, JobResultPart> partStore() {
+        Map<String, JobResultPart> store = new LinkedHashMap<>();
+        org.mockito.Mockito.lenient().when(jobResultPartRepository.save(any(JobResultPart.class)))
+                .thenAnswer(invocation -> {
+                    JobResultPart part = invocation.getArgument(0);
+                    store.put(part.getId(), part);
+                    return part;
+                });
+        org.mockito.Mockito.lenient().when(jobResultPartRepository.findByJobId("job-1"))
+                .thenAnswer(invocation -> new ArrayList<>(store.values()));
+        org.mockito.Mockito.lenient().doAnswer(invocation -> {
+            store.clear();
+            return null;
+        }).when(jobResultPartRepository).deleteByJobId("job-1");
+        return store;
+    }
+
+    private FaceAppearanceResult face(String faceId, float x, float y, float z) {
+        float[] vector = EmbeddingCodec.normalize(new float[] {x, y, z});
+        return new FaceAppearanceResult(
+                faceId, "00:00:01", "url", null,
+                java.util.Base64.getEncoder().encodeToString(EmbeddingCodec.toBytes(vector))
+        );
+    }
+
+    private VideoProcessingEvent embeddingEvent(
+            String attemptId,
+            Integer part,
+            Integer parts,
+            List<FaceAppearanceResult> appearances
+    ) {
+        return new VideoProcessingEvent(
+                VideoProcessingEvent.COMPLETED, "1", "job-1", NOW, null, appearances,
+                attemptId, part, parts, MODEL, 3
+        );
+    }
+
     private void useFixedClock(Instant instant) {
         service = new VideoJobService(
                 videoJobRepository,
                 faceAppearanceRepository,
+                faceEmbeddingRepository,
+                jobResultPartRepository,
                 cameraRepository,
                 sqsVideoJobPublisher,
                 BUCKET,
                 Clock.fixed(instant, ZoneId.of("America/Bogota")),
                 UPLOADED_TIMEOUT_MINUTES,
                 QUEUED_TIMEOUT_MINUTES,
-                PROCESSING_TIMEOUT_MINUTES
+                PROCESSING_TIMEOUT_MINUTES,
+                MODEL
         );
     }
 
@@ -827,13 +1111,15 @@ class VideoJobServiceTest {
 
     private VideoProcessingEvent started(Instant sentAt) {
         return new VideoProcessingEvent(
-                VideoProcessingEvent.STARTED, "1", "job-1", sentAt, null, null
+                VideoProcessingEvent.STARTED, "1", "job-1", sentAt, null, null,
+                null, null, null, null, null
         );
     }
 
     private VideoProcessingEvent failed(Instant sentAt, String reason) {
         return new VideoProcessingEvent(
-                VideoProcessingEvent.FAILED, "1", "job-1", sentAt, reason, null
+                VideoProcessingEvent.FAILED, "1", "job-1", sentAt, reason, null,
+                null, null, null, null, null
         );
     }
 
@@ -842,7 +1128,8 @@ class VideoJobServiceTest {
             List<FaceAppearanceResult> appearances
     ) {
         return new VideoProcessingEvent(
-                VideoProcessingEvent.COMPLETED, "1", "job-1", sentAt, null, appearances
+                VideoProcessingEvent.COMPLETED, "1", "job-1", sentAt, null, appearances,
+                null, null, null, null, null
         );
     }
 }

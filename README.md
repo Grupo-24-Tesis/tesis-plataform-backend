@@ -45,6 +45,7 @@ archivo `.env` en la raíz del repositorio. Ese archivo nunca se sube a git.
 | `VIDEO_JOB_UPLOADED_TIMEOUT_MINUTES` | Minutos que un trabajo puede quedarse sin enviarse a la cola antes de darse por fallido (5 por defecto) |
 | `VIDEO_JOB_QUEUED_TIMEOUT_MINUTES` | Minutos que un trabajo puede esperar en la cola antes de darse por fallido (720 por defecto) |
 | `VIDEO_JOB_PROCESSING_TIMEOUT_MINUTES` | Minutos sin avance del pipeline antes de dar por fallido un trabajo en curso (15 por defecto) |
+| `MATCHING_MODEL` | Modelo de embeddings aceptado en los resultados (`matching.model`, `GhostFaceNet` por defecto) |
 
 Recursos de AWS necesarios:
 
@@ -143,6 +144,40 @@ Los eventos pueden llegar repetidos o desordenados:
   último evento. Un `sentAt` igual o anterior se ignora.
 - Un evento `FAILED` con un `sentAt` igual o anterior al último evento del worker también se
   ignora, así que un fallo repetido de un intento anterior no deshace un reintento.
+
+## Embeddings y resultados en partes
+
+Cada `appearances[]` de `VIDEO_PROCESSING_COMPLETED` puede traer `embedding`: el vector de la
+detección en float32 little-endian y de norma 1, en base64. El evento declara
+`embeddingModel` (debe ser igual a `matching.model`, `GhostFaceNet` por defecto) y
+`embeddingDimensions` (512). El backend decodifica el vector, exige la longitud
+`embeddingDimensions * 4` bytes, valores finitos y una norma entre 0,99 y 1,01, lo
+renormaliza y lo guarda. Cualquier fallo es un evento inválido que nombra el `faceId`. Una
+detección sin `embedding` se guarda igual, pero no tiene vector y no puede buscarse.
+
+Los embeddings se guardan en `face_embeddings`, con `_id` igual a `<faceId>:<model>`,
+`faceId`, `jobId`, `cameraId`, `model`, `dimensions`, `vector` (binario BSON) y `createdAt`.
+Un reintento de un video borra sus embeddings junto con sus detecciones.
+
+Cuando los resultados de un video no caben en un mensaje, el worker los divide en partes
+numeradas. El evento lleva entonces `attemptId` (un identificador por cada ejecución del
+pipeline), `part` (desde 1) y `parts` (el total). Sin `parts`, o con `parts` 1, el evento
+completa el video de inmediato.
+
+- Cada parte válida se guarda en `job_result_parts` con `_id` igual a
+  `<jobId>:<attemptId>:<part>`. El trabajo no cambia de estado, pero `lastWorkerEventAt`
+  avanza, de modo que el límite de `PROCESSING` sigue aplicando.
+- Las partes pueden llegar en cualquier orden y repetidas. El trabajo se completa cuando un
+  mismo `attemptId` tiene todas las partes de 1 a `parts`; las partes de otros intentos se
+  ignoran y se borran al completar.
+- Se rechazan una parte fuera de rango, `part` sin `parts` (o al revés), un `attemptId`
+  ausente, un `parts` distinto del ya recibido en ese intento y un `faceId` repetido en dos
+  partes.
+- Al completar se escriben, en este orden, las detecciones, los embeddings y el estado del
+  trabajo, y luego se borran las partes. Todas las escrituras usan ids deterministas, así
+  que una caída a medias seguida de una reentrega termina en el mismo estado.
+- Un trabajo `COMPLETED` ignora las partes posteriores; uno `FAILED` se completa si llega
+  un intento completo. `FAILED` y el reintento borran las partes guardadas.
 
 ## Errores
 

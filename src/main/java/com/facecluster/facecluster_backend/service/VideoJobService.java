@@ -1,6 +1,8 @@
 package com.facecluster.facecluster_backend.service;
 
 import com.facecluster.facecluster_backend.domain.FaceAppearance;
+import com.facecluster.facecluster_backend.domain.FaceEmbedding;
+import com.facecluster.facecluster_backend.domain.JobResultPart;
 import com.facecluster.facecluster_backend.domain.VideoJob;
 import com.facecluster.facecluster_backend.domain.VideoJobStatus;
 import com.facecluster.facecluster_backend.dto.VideoJobResponse;
@@ -13,6 +15,8 @@ import com.facecluster.facecluster_backend.messaging.VideoProcessingEvent;
 import com.facecluster.facecluster_backend.messaging.VideoProcessingMessage;
 import com.facecluster.facecluster_backend.repository.CameraRepository;
 import com.facecluster.facecluster_backend.repository.FaceAppearanceRepository;
+import com.facecluster.facecluster_backend.repository.FaceEmbeddingRepository;
+import com.facecluster.facecluster_backend.repository.JobResultPartRepository;
 import com.facecluster.facecluster_backend.repository.VideoJobRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,9 +29,13 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class VideoJobService {
@@ -36,6 +44,8 @@ public class VideoJobService {
 
     private final VideoJobRepository videoJobRepository;
     private final FaceAppearanceRepository faceAppearanceRepository;
+    private final FaceEmbeddingRepository faceEmbeddingRepository;
+    private final JobResultPartRepository jobResultPartRepository;
     private final CameraRepository cameraRepository;
     private final SqsVideoJobPublisher sqsVideoJobPublisher;
     private final String bucket;
@@ -43,20 +53,26 @@ public class VideoJobService {
     private final long uploadedTimeoutMinutes;
     private final long queuedTimeoutMinutes;
     private final long processingTimeoutMinutes;
+    private final String matchingModel;
 
     public VideoJobService(
             VideoJobRepository videoJobRepository,
             FaceAppearanceRepository faceAppearanceRepository,
+            FaceEmbeddingRepository faceEmbeddingRepository,
+            JobResultPartRepository jobResultPartRepository,
             CameraRepository cameraRepository,
             SqsVideoJobPublisher sqsVideoJobPublisher,
             @Value("${aws.s3.bucket}") String bucket,
             Clock clock,
             @Value("${video-jobs.uploaded-timeout-minutes}") long uploadedTimeoutMinutes,
             @Value("${video-jobs.queued-timeout-minutes}") long queuedTimeoutMinutes,
-            @Value("${video-jobs.processing-timeout-minutes}") long processingTimeoutMinutes
+            @Value("${video-jobs.processing-timeout-minutes}") long processingTimeoutMinutes,
+            @Value("${matching.model}") String matchingModel
     ) {
         this.videoJobRepository = videoJobRepository;
         this.faceAppearanceRepository = faceAppearanceRepository;
+        this.faceEmbeddingRepository = faceEmbeddingRepository;
+        this.jobResultPartRepository = jobResultPartRepository;
         this.cameraRepository = cameraRepository;
         this.sqsVideoJobPublisher = sqsVideoJobPublisher;
         this.bucket = bucket;
@@ -64,6 +80,7 @@ public class VideoJobService {
         this.uploadedTimeoutMinutes = uploadedTimeoutMinutes;
         this.queuedTimeoutMinutes = queuedTimeoutMinutes;
         this.processingTimeoutMinutes = processingTimeoutMinutes;
+        this.matchingModel = matchingModel;
     }
 
     public VideoJobResponse registerUploadedVideo(VideoUploadedRequest request) {
@@ -95,6 +112,8 @@ public class VideoJobService {
         }
 
         faceAppearanceRepository.deleteByJobId(job.getId());
+        faceEmbeddingRepository.deleteByJobId(job.getId());
+        jobResultPartRepository.deleteByJobId(job.getId());
 
         job.setFailureReason(null);
         job.setStartedAt(null);
@@ -172,7 +191,13 @@ public class VideoJobService {
         VideoJob job = findJob(jobId);
 
         try {
-            completeJob(job, request == null ? null : request.appearances(), null);
+            completeJob(
+                    job,
+                    request == null ? null : request.appearances(),
+                    null,
+                    null,
+                    null
+            );
         } catch (InvalidWorkerEventException exception) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
@@ -199,8 +224,7 @@ public class VideoJobService {
         switch (event.eventType()) {
             case VideoProcessingEvent.STARTED -> markProcessing(job, sentAt);
             case VideoProcessingEvent.FAILED -> markFailed(job, event.reason(), sentAt);
-            case VideoProcessingEvent.COMPLETED ->
-                    completeJob(job, event.appearances(), event.sentAt());
+            case VideoProcessingEvent.COMPLETED -> completeFromEvent(job, event);
             default -> throw new InvalidWorkerEventException(
                     "eventType desconocido: " + event.eventType()
             );
@@ -288,12 +312,174 @@ public class VideoJobService {
         job.setUpdatedAt(Instant.now());
 
         videoJobRepository.save(job);
+        jobResultPartRepository.deleteByJobId(job.getId());
+    }
+
+    private record ConvertedResults(
+            List<FaceAppearance> appearances,
+            List<FaceEmbedding> embeddings
+    ) {
+    }
+
+    private void completeFromEvent(VideoJob job, VideoProcessingEvent event) {
+        boolean singlePart = (event.parts() == null || event.parts() == 1)
+                && (event.part() == null || event.part() == 1);
+
+        if (singlePart) {
+            completeJob(
+                    job,
+                    event.appearances(),
+                    event.sentAt(),
+                    event.embeddingModel(),
+                    event.embeddingDimensions()
+            );
+            return;
+        }
+
+        storePart(job, event);
+    }
+
+    private void storePart(VideoJob job, VideoProcessingEvent event) {
+        if (event.appearances() == null) {
+            throw new InvalidWorkerEventException(
+                    "La lista de apariciones es obligatoria"
+            );
+        }
+
+        if (VideoJobStatus.COMPLETED.equals(job.getStatus())) {
+            return;
+        }
+
+        if (event.part() == null || event.parts() == null) {
+            throw new InvalidWorkerEventException(
+                    "part y parts deben venir juntos"
+            );
+        }
+
+        if (isBlank(event.attemptId())) {
+            throw new InvalidWorkerEventException(
+                    "attemptId es obligatorio cuando el resultado viene en partes"
+            );
+        }
+
+        int part = event.part();
+        int parts = event.parts();
+
+        if (part < 1 || part > parts) {
+            throw new InvalidWorkerEventException(
+                    "La parte " + part + " está fuera del rango 1 a " + parts
+            );
+        }
+
+        convertResults(
+                job,
+                event.appearances(),
+                event.embeddingModel(),
+                event.embeddingDimensions()
+        );
+
+        List<JobResultPart> attemptParts = attemptParts(job, event.attemptId());
+
+        for (JobResultPart stored : attemptParts) {
+            if (stored.getParts() != parts) {
+                throw new InvalidWorkerEventException(
+                        "El total de partes " + parts + " no coincide con el ya recibido "
+                                + stored.getParts()
+                );
+            }
+
+            if (stored.getPart() == part) {
+                continue;
+            }
+
+            Set<String> storedFaceIds = new HashSet<>();
+            stored.getAppearances().forEach(result -> storedFaceIds.add(result.faceId()));
+
+            for (FaceAppearanceResult result : event.appearances()) {
+                if (storedFaceIds.contains(result.faceId())) {
+                    throw new InvalidWorkerEventException(
+                            "El faceId " + result.faceId() + " viene en dos partes"
+                    );
+                }
+            }
+        }
+
+        JobResultPart received = new JobResultPart();
+        received.setId(job.getId() + ":" + event.attemptId() + ":" + part);
+        received.setJobId(job.getId());
+        received.setAttemptId(event.attemptId());
+        received.setPart(part);
+        received.setParts(parts);
+        received.setAppearances(event.appearances());
+        received.setEmbeddingModel(event.embeddingModel());
+        received.setEmbeddingDimensions(event.embeddingDimensions());
+        received.setReceivedAt(LocalDateTime.now(clock));
+        jobResultPartRepository.save(received);
+
+        List<JobResultPart> complete = attemptParts(job, event.attemptId());
+        Set<Integer> present = new HashSet<>();
+        complete.forEach(stored -> present.add(stored.getPart()));
+
+        if (present.size() == parts) {
+            completeFromParts(job, complete, event.sentAt());
+            return;
+        }
+
+        Instant sentAt = event.sentAt() != null ? event.sentAt() : Instant.now(clock);
+
+        if (job.getLastWorkerEventAt() == null || sentAt.isAfter(job.getLastWorkerEventAt())) {
+            job.setLastWorkerEventAt(sentAt);
+        }
+
+        job.setUpdatedAt(Instant.now());
+        videoJobRepository.save(job);
+    }
+
+    private List<JobResultPart> attemptParts(VideoJob job, String attemptId) {
+        return jobResultPartRepository.findByJobId(job.getId()).stream()
+                .filter(stored -> attemptId.equals(stored.getAttemptId()))
+                .sorted(Comparator.comparingInt(JobResultPart::getPart))
+                .toList();
+    }
+
+    private void completeFromParts(
+            VideoJob job,
+            List<JobResultPart> orderedParts,
+            Instant sentAt
+    ) {
+        List<FaceAppearance> appearances = new ArrayList<>();
+        List<FaceEmbedding> embeddings = new ArrayList<>();
+        Set<String> faceIds = new HashSet<>();
+
+        for (JobResultPart stored : orderedParts) {
+            ConvertedResults converted = convertResults(
+                    job,
+                    stored.getAppearances(),
+                    stored.getEmbeddingModel(),
+                    stored.getEmbeddingDimensions()
+            );
+
+            for (FaceAppearance appearance : converted.appearances()) {
+                if (!faceIds.add(appearance.getFaceId())) {
+                    throw new InvalidWorkerEventException(
+                            "El faceId " + appearance.getFaceId() + " viene en dos partes"
+                    );
+                }
+            }
+
+            appearances.addAll(converted.appearances());
+            embeddings.addAll(converted.embeddings());
+        }
+
+        finishJob(job, new ConvertedResults(appearances, embeddings), sentAt);
     }
 
     private void completeJob(
             VideoJob job,
             List<FaceAppearanceResult> results,
-            Instant sentAt
+            Instant sentAt,
+            String embeddingModel,
+            Integer embeddingDimensions
     ) {
         if (results == null) {
             throw new InvalidWorkerEventException(
@@ -305,7 +491,35 @@ public class VideoJobService {
             return;
         }
 
+        finishJob(
+                job,
+                convertResults(job, results, embeddingModel, embeddingDimensions),
+                sentAt
+        );
+    }
+
+    private void finishJob(VideoJob job, ConvertedResults converted, Instant sentAt) {
+        faceAppearanceRepository.saveAll(converted.appearances());
+        faceEmbeddingRepository.saveAll(converted.embeddings());
+
+        job.setStatus(VideoJobStatus.COMPLETED);
+        job.setFailureReason(null);
+        job.setCompletedAt(sentAt != null ? sentAt : Instant.now(clock));
+        job.setFaceCount(converted.appearances().size());
+        job.setUpdatedAt(Instant.now());
+
+        videoJobRepository.save(job);
+        jobResultPartRepository.deleteByJobId(job.getId());
+    }
+
+    private ConvertedResults convertResults(
+            VideoJob job,
+            List<FaceAppearanceResult> results,
+            String embeddingModel,
+            Integer embeddingDimensions
+    ) {
         List<FaceAppearance> appearances = new ArrayList<>();
+        List<FaceEmbedding> embeddings = new ArrayList<>();
 
         for (FaceAppearanceResult result : results) {
             if (result == null || isBlank(result.faceId())) {
@@ -342,17 +556,57 @@ public class VideoJobService {
             }
 
             appearances.add(appearance);
+
+            if (!isBlank(result.embedding())) {
+                embeddings.add(
+                        toEmbedding(job, result, embeddingModel, embeddingDimensions)
+                );
+            }
         }
 
-        faceAppearanceRepository.saveAll(appearances);
+        return new ConvertedResults(appearances, embeddings);
+    }
 
-        job.setStatus(VideoJobStatus.COMPLETED);
-        job.setFailureReason(null);
-        job.setCompletedAt(sentAt != null ? sentAt : Instant.now(clock));
-        job.setFaceCount(appearances.size());
-        job.setUpdatedAt(Instant.now());
+    private FaceEmbedding toEmbedding(
+            VideoJob job,
+            FaceAppearanceResult result,
+            String embeddingModel,
+            Integer embeddingDimensions
+    ) {
+        if (!matchingModel.equals(embeddingModel)) {
+            throw new InvalidWorkerEventException(
+                    "El embedding del faceId " + result.faceId()
+                            + " es del modelo " + embeddingModel
+                            + " y se esperaba " + matchingModel
+            );
+        }
 
-        videoJobRepository.save(job);
+        if (embeddingDimensions == null) {
+            throw new InvalidWorkerEventException(
+                    "embeddingDimensions es obligatorio para el faceId " + result.faceId()
+            );
+        }
+
+        float[] vector;
+        try {
+            vector = EmbeddingCodec.decode(result.embedding(), embeddingDimensions);
+        } catch (IllegalArgumentException exception) {
+            throw new InvalidWorkerEventException(
+                    "Embedding inválido en el faceId " + result.faceId() + ": "
+                            + exception.getMessage()
+            );
+        }
+
+        FaceEmbedding embedding = new FaceEmbedding();
+        embedding.setId(result.faceId() + ":" + embeddingModel);
+        embedding.setFaceId(result.faceId());
+        embedding.setJobId(job.getId());
+        embedding.setCameraId(job.getCameraId());
+        embedding.setModel(embeddingModel);
+        embedding.setDimensions(embeddingDimensions);
+        embedding.setVector(EmbeddingCodec.toBytes(vector));
+        embedding.setCreatedAt(LocalDateTime.now(clock));
+        return embedding;
     }
 
     private boolean isOutdated(VideoJob job, Instant sentAt) {

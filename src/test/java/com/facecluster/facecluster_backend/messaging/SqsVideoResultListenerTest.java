@@ -79,6 +79,31 @@ class SqsVideoResultListenerTest {
     }
 
     @Test
+    void splitEventWithEmbeddingsIsDeserialized() {
+        SqsVideoResultListener listener = listener(QUEUE_URL);
+        queueHolds("""
+                {"eventType": "VIDEO_PROCESSING_COMPLETED", "eventVersion": "1",
+                 "jobId": "job-1", "sentAt": "2026-11-14T12:00:00.000001Z",
+                 "attemptId": "attempt-x", "part": 2, "parts": 3,
+                 "embeddingModel": "GhostFaceNet", "embeddingDimensions": 512,
+                 "appearances": [{"faceId": "job-1_4", "timestamp": "00:01:23",
+                  "frameUrl": "url", "capturedAt": null, "embedding": "AAAA"}]}
+                """);
+
+        listener.poll();
+
+        ArgumentCaptor<VideoProcessingEvent> event =
+                ArgumentCaptor.forClass(VideoProcessingEvent.class);
+        verify(videoJobService).applyWorkerEvent(event.capture());
+        assertThat(event.getValue().attemptId()).isEqualTo("attempt-x");
+        assertThat(event.getValue().part()).isEqualTo(2);
+        assertThat(event.getValue().parts()).isEqualTo(3);
+        assertThat(event.getValue().embeddingModel()).isEqualTo("GhostFaceNet");
+        assertThat(event.getValue().embeddingDimensions()).isEqualTo(512);
+        assertThat(event.getValue().appearances().get(0).embedding()).isEqualTo("AAAA");
+    }
+
+    @Test
     void failedEventCarriesTheReason() {
         SqsVideoResultListener listener = listener(QUEUE_URL);
         queueHolds("""
