@@ -67,7 +67,7 @@ Levanta dos contenedores:
 
 | Servicio | Puerto | Contenido |
 | --- | --- | --- |
-| `mongodb` | 127.0.0.1:27017 | MongoDB con los datos iniciales de `docker/mongo/init` (tres vigilantes, las cámaras `CAM-01` a `CAM-03` y dos reportes de ejemplo, sin rostros ni marcas) |
+| `mongodb` | 127.0.0.1:27017 | MongoDB con los datos iniciales de `docker/mongo/init` (tres vigilantes y las cámaras `CAM-01` a `CAM-03`, sin reportes, rostros ni marcas) |
 | `backend` | 127.0.0.1:8080 | La API |
 
 Comprobación:
