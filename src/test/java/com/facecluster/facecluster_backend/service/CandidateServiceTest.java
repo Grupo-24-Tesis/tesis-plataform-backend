@@ -71,7 +71,7 @@ class CandidateServiceTest {
             return responses;
         });
 
-        service = new CandidateService(embeddingRepository, appearanceRepository, faceMatchService, MODEL, 20);
+        service = new CandidateService(embeddingRepository, appearanceRepository, faceMatchService, MODEL, 100, 0.55);
 
         detection("job-a_1", "job-a", 1, new float[] {1, 0});
     }
@@ -146,13 +146,50 @@ class CandidateServiceTest {
     }
 
     @Test
-    void noCutOffByDefault() {
-        detection("job-b_1", "job-b", 2, new float[] {-0.5f, 0.8660254f});
+    void defaultCutOffLeavesOutLowScores() {
+        detection("job-b_1", "job-b", 2, new float[] {0.54f, (float) Math.sqrt(1 - 0.54 * 0.54)});
+        detection("job-c_1", "job-c", 3, new float[] {0.55f, (float) Math.sqrt(1 - 0.55 * 0.55)});
 
         List<MatchDetectionResponse> result = service.candidates("job-a_1", null, null);
 
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0).score()).isCloseTo(-0.5, org.assertj.core.data.Offset.offset(1e-6));
+        assertThat(result).extracting(MatchDetectionResponse::faceId).containsExactly("job-c_1");
+    }
+
+    @Test
+    void requestMinScoreOverridesDefault() {
+        detection("job-b_1", "job-b", 2, new float[] {0.3f, (float) Math.sqrt(1 - 0.3 * 0.3)});
+
+        List<MatchDetectionResponse> result = service.candidates("job-a_1", null, 0.2);
+
+        assertThat(result).extracting(MatchDetectionResponse::faceId).containsExactly("job-b_1");
+    }
+
+    @Test
+    void noCandidateAboveCutOffReturnsEmpty() {
+        detection("job-b_1", "job-b", 2, new float[] {0.1f, (float) Math.sqrt(1 - 0.01)});
+        detection("job-c_1", "job-c", 3, new float[] {-0.5f, 0.8660254f});
+
+        assertThat(service.candidates("job-a_1", null, null)).isEmpty();
+    }
+
+    @Test
+    void defaultLimitReturnsAllAboveCutOff() {
+        for (int i = 0; i < 30; i++) {
+            detection("job-x" + i + "_1", "job-x" + i, 2, new float[] {1, 0});
+        }
+
+        assertThat(service.candidates("job-a_1", null, null)).hasSize(30);
+    }
+
+    @Test
+    void invalidConfiguredMinScoreFailsAtStartup() {
+        assertThatThrownBy(() -> new CandidateService(
+                embeddingRepository, appearanceRepository, faceMatchService, MODEL, 100, 1.5))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("matching.min-score debe estar entre -1 y 1");
+        assertThatThrownBy(() -> new CandidateService(
+                embeddingRepository, appearanceRepository, faceMatchService, MODEL, 100, -1.5))
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test

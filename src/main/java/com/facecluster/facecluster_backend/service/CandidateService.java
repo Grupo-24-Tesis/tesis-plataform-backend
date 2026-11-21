@@ -30,19 +30,25 @@ public class CandidateService {
     private final FaceMatchService faceMatchService;
     private final String model;
     private final int defaultLimit;
+    private final double defaultMinScore;
 
     public CandidateService(
             FaceEmbeddingRepository embeddingRepository,
             FaceAppearanceRepository appearanceRepository,
             FaceMatchService faceMatchService,
             @Value("${matching.model}") String model,
-            @Value("${matching.candidates-limit:20}") int defaultLimit
+            @Value("${matching.candidates-limit:100}") int defaultLimit,
+            @Value("${matching.min-score:0.55}") double defaultMinScore
     ) {
         this.embeddingRepository = embeddingRepository;
         this.appearanceRepository = appearanceRepository;
         this.faceMatchService = faceMatchService;
         this.model = model;
         this.defaultLimit = defaultLimit;
+        if (defaultMinScore < -1 || defaultMinScore > 1) {
+            throw new IllegalStateException("matching.min-score debe estar entre -1 y 1");
+        }
+        this.defaultMinScore = defaultMinScore;
     }
 
     public List<MatchDetectionResponse> candidates(String faceId, Integer limit, Double minScore) {
@@ -55,6 +61,8 @@ public class CandidateService {
         if (minScore != null && (minScore < -1 || minScore > 1)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "minScore debe estar entre -1 y 1");
         }
+
+        double cutOff = minScore == null ? defaultMinScore : minScore;
 
         String jobId = appearanceRepository.findById(faceId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
@@ -87,7 +95,7 @@ public class CandidateService {
 
             double score = EmbeddingCodec.dot(reference, vector);
 
-            if (minScore == null || score >= minScore) {
+            if (score >= cutOff) {
                 scored.add(new Scored(other.getFaceId(), score));
             }
         }
