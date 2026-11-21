@@ -944,6 +944,23 @@ class VideoJobServiceTest {
     }
 
     @Test
+    void partForCompletedJobCleansLeftoverParts() {
+        storedJob(VideoJobStatus.COMPLETED);
+        Map<String, JobResultPart> store = partStore();
+        JobResultPart leftover = new JobResultPart();
+        leftover.setId("job-1:attempt-x:1");
+        leftover.setJobId("job-1");
+        store.put(leftover.getId(), leftover);
+
+        service.applyWorkerEvent(embeddingEvent(
+                "attempt-x", 2, 2, List.of(face("job-1_2", 0, 1, 0))
+        ));
+
+        assertThat(store).isEmpty();
+        verify(jobResultPartRepository).deleteByJobId("job-1");
+    }
+
+    @Test
     void failedJobCompletesWhenFullAttemptArrives() {
         VideoJob job = storedJob(VideoJobStatus.FAILED);
         job.setFailureReason("sin respuesta");

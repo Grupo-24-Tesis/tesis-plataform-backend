@@ -5,6 +5,7 @@ import com.facecluster.facecluster_backend.domain.FaceAppearance;
 import com.facecluster.facecluster_backend.domain.FaceMatch;
 import com.facecluster.facecluster_backend.domain.VideoJob;
 import com.facecluster.facecluster_backend.dto.DetectionMatchesResponse;
+import com.facecluster.facecluster_backend.dto.DetectionMatchesResponse.DiscardedMatch;
 import com.facecluster.facecluster_backend.dto.DetectionMatchesResponse.MatchLink;
 import com.facecluster.facecluster_backend.dto.FaceMatchRequest;
 import com.facecluster.facecluster_backend.dto.MatchDetectionResponse;
@@ -150,7 +151,47 @@ public class FaceMatchService {
                         link.getCreatedByGuardId(), link.getCreatedAt()))
                 .toList();
 
-        return new DetectionMatchesResponse(faceId, matchLinks, detectionsOf(members));
+        return new DetectionMatchesResponse(
+                faceId, matchLinks, detectionsOf(members), discardedOf(faceId));
+    }
+
+    public Set<String> confirmedGroupOf(String faceId) {
+        Set<String> members = component(faceId, adjacency(reachableLinks(List.of(faceId))));
+        members.remove(faceId);
+        return members;
+    }
+
+    private List<DiscardedMatch> discardedOf(String faceId) {
+        List<FaceMatch> discards = matchRepository.findTouching(faceId).stream()
+                .filter(match -> DISCARDED.equals(match.getDecision()))
+                .sorted(Comparator
+                        .comparing(FaceMatch::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(FaceMatch::getId))
+                .toList();
+
+        if (discards.isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, FaceMatch> byOther = new LinkedHashMap<>();
+        for (FaceMatch match : discards) {
+            byOther.put(faceId.equals(match.getFaceIdA()) ? match.getFaceIdB() : match.getFaceIdA(), match);
+        }
+
+        Map<String, MatchDetectionResponse> details = new HashMap<>();
+        for (MatchDetectionResponse detection : detectionsOf(byOther.keySet())) {
+            details.put(detection.faceId(), detection);
+        }
+
+        List<DiscardedMatch> result = new ArrayList<>();
+        for (Map.Entry<String, FaceMatch> entry : byOther.entrySet()) {
+            MatchDetectionResponse detection = details.get(entry.getKey());
+            if (detection != null) {
+                result.add(new DiscardedMatch(entry.getValue().getId(), detection));
+            }
+        }
+
+        return result;
     }
 
     public Map<String, Integer> matchCounts(Collection<String> faceIds) {

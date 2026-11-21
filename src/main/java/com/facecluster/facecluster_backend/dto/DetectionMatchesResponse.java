@@ -6,8 +6,11 @@ import java.util.List;
 public record DetectionMatchesResponse(
         String faceId,
         List<MatchLink> links,
-        List<MatchDetectionResponse> detections
+        List<MatchDetectionResponse> detections,
+        List<DiscardedMatch> discarded
 ) {
+
+    public record DiscardedMatch(String id, MatchDetectionResponse detection) {}
 
     public record MatchLink(
             String id,

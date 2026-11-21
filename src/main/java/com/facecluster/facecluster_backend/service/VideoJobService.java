@@ -362,6 +362,7 @@ public class VideoJobService {
         }
 
         if (VideoJobStatus.COMPLETED.equals(job.getStatus())) {
+            jobResultPartRepository.deleteByJobId(job.getId());
             return;
         }
 

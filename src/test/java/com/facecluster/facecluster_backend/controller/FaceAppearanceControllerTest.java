@@ -149,7 +149,8 @@ class FaceAppearanceControllerTest {
                 LocalDateTime.parse("2026-11-20T11:00:00")
         );
         when(faceMatchService.group("job-1_1"))
-                .thenReturn(new DetectionMatchesResponse("job-1_1", List.of(link), List.of(other)));
+                .thenReturn(new DetectionMatchesResponse("job-1_1", List.of(link), List.of(other),
+                        List.of(new DetectionMatchesResponse.DiscardedMatch("job-1_1|job-3_1", other))));
 
         byIdsMockMvc(mock(FaceAppearanceRepository.class), mock(FaceImageService.class))
                 .perform(get("/api/face-appearances/job-1_1/matches"))
@@ -157,7 +158,9 @@ class FaceAppearanceControllerTest {
                 .andExpect(jsonPath("$.faceId").value("job-1_1"))
                 .andExpect(jsonPath("$.links[0].id").value("job-1_1|job-2_1"))
                 .andExpect(jsonPath("$.detections[0].faceId").value("job-2_1"))
-                .andExpect(jsonPath("$.detections[0].cameraName").value("Torre"));
+                .andExpect(jsonPath("$.detections[0].cameraName").value("Torre"))
+                .andExpect(jsonPath("$.discarded[0].id").value("job-1_1|job-3_1"))
+                .andExpect(jsonPath("$.discarded[0].detection.faceId").value("job-2_1"));
     }
 
     @Test

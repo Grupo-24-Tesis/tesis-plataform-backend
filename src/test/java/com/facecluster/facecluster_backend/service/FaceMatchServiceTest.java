@@ -242,6 +242,34 @@ class FaceMatchServiceTest {
     }
 
     @Test
+    void groupListsDirectDiscards() {
+        service.decide(request("job-a_1", "job-b_1", "confirmada"));
+        service.decide(request("job-a_1", "job-c_1", "descartada"));
+        service.decide(request("job-d_1", "job-a_1", "descartada"));
+        service.decide(request("job-b_1", "job-c_1", "descartada"));
+        store.get("job-a_1|job-c_1").setUpdatedAt(LocalDateTime.of(2026, 11, 20, 8, 0));
+        store.get("job-a_1|job-d_1").setUpdatedAt(LocalDateTime.of(2026, 11, 20, 9, 0));
+
+        DetectionMatchesResponse group = service.group("job-a_1");
+
+        assertThat(group.discarded()).extracting(d -> d.id())
+                .containsExactly("job-a_1|job-d_1", "job-a_1|job-c_1");
+        assertThat(group.discarded()).extracting(d -> d.detection().faceId())
+                .containsExactly("job-d_1", "job-c_1");
+        assertThat(group.discarded().get(0).detection().score()).isNull();
+        assertThat(group.detections()).extracting(d -> d.faceId()).containsExactly("job-b_1");
+    }
+
+    @Test
+    void confirmedGroupOfListsEveryMember() {
+        service.decide(request("job-a_1", "job-b_1", "confirmada"));
+        service.decide(request("job-b_1", "job-c_1", "confirmada"));
+        service.decide(request("job-c_1", "job-d_1", "descartada"));
+
+        assertThat(service.confirmedGroupOf("job-a_1")).containsExactlyInAnyOrder("job-b_1", "job-c_1");
+    }
+
+    @Test
     void groupOfUnknownDetectionIs404() {
         ResponseStatusException e = failure(() -> service.group("job-z_9"));
         assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);

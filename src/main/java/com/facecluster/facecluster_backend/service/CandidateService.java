@@ -66,7 +66,8 @@ public class CandidateService {
                         "La detección no tiene embedding"));
 
         float[] reference = EmbeddingCodec.fromBytes(own.getVector());
-        Set<String> decided = faceMatchService.decidedWith(faceId);
+        Set<String> decided = new java.util.HashSet<>(faceMatchService.decidedWith(faceId));
+        decided.addAll(faceMatchService.confirmedGroupOf(faceId));
         List<Scored> scored = new ArrayList<>();
 
         for (FaceEmbedding other : embeddingRepository.findCandidateVectors(model, jobId)) {

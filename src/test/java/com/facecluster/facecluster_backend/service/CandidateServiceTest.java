@@ -134,6 +134,18 @@ class CandidateServiceTest {
     }
 
     @Test
+    void leavesOutConfirmedGroupMembers() {
+        detection("job-b_1", "job-b", 2, new float[] {0.6f, 0.8f});
+        detection("job-c_1", "job-c", 3, new float[] {0.8f, 0.6f});
+        when(faceMatchService.decidedWith("job-a_1")).thenReturn(Set.of("job-b_1"));
+        when(faceMatchService.confirmedGroupOf("job-a_1")).thenReturn(Set.of("job-b_1", "job-c_1"));
+
+        List<MatchDetectionResponse> result = service.candidates("job-a_1", null, null);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
     void noCutOffByDefault() {
         detection("job-b_1", "job-b", 2, new float[] {-0.5f, 0.8660254f});
 
