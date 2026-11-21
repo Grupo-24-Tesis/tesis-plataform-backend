@@ -44,7 +44,8 @@ class FaceAppearanceControllerTest {
                         mock(ReportRepository.class),
                         mock(MarkedRepository.class),
                         faceImageService,
-                        faceMatchService
+                        faceMatchService,
+                        mock(com.facecluster.facecluster_backend.service.CandidateService.class)
                 ))
                 .setControllerAdvice(new ApiExceptionHandler())
                 .build();
@@ -77,7 +78,8 @@ class FaceAppearanceControllerTest {
                         mock(ReportRepository.class),
                         mock(MarkedRepository.class),
                         faceImageService,
-                        faceMatchService
+                        faceMatchService,
+                        mock(com.facecluster.facecluster_backend.service.CandidateService.class)
                 ))
                 .setControllerAdvice(new ApiExceptionHandler())
                 .build();
@@ -183,5 +185,35 @@ class FaceAppearanceControllerTest {
                 .andExpect(jsonPath("$[0].matchCount").value(2));
         mockMvc.perform(get("/api/face-appearances/unique"))
                 .andExpect(jsonPath("$[0].appearances[0].matchCount").value(2));
+    }
+
+    @Test
+    void candidatesEndpointReturnsRankedList() throws Exception {
+        com.facecluster.facecluster_backend.service.CandidateService candidateService =
+                mock(com.facecluster.facecluster_backend.service.CandidateService.class);
+        MatchDetectionResponse candidate = new MatchDetectionResponse(
+                "job-2_1", "job-2", "cam-2", "Torre", "b.mp4", "00:00:05",
+                LocalDateTime.parse("2026-11-20T10:00:00"), 0.83, "https://presigned/b"
+        );
+        when(candidateService.candidates("job-1_1", 5, 0.5)).thenReturn(List.of(candidate));
+
+        MockMvcBuilders
+                .standaloneSetup(new FaceAppearanceController(
+                        mock(FaceAppearanceRepository.class),
+                        mock(ReportRepository.class),
+                        mock(MarkedRepository.class),
+                        mock(FaceImageService.class),
+                        faceMatchService,
+                        candidateService
+                ))
+                .setControllerAdvice(new ApiExceptionHandler())
+                .build()
+                .perform(get("/api/face-appearances/job-1_1/candidates")
+                        .param("limit", "5")
+                        .param("minScore", "0.5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].faceId").value("job-2_1"))
+                .andExpect(jsonPath("$[0].score").value(0.83))
+                .andExpect(jsonPath("$[0].cameraName").value("Torre"));
     }
 }

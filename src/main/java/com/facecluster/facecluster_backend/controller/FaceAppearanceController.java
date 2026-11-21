@@ -7,6 +7,8 @@ import com.facecluster.facecluster_backend.repository.FaceAppearanceRepository;
 import com.facecluster.facecluster_backend.repository.MarkedRepository;
 import com.facecluster.facecluster_backend.repository.ReportRepository;
 import com.facecluster.facecluster_backend.dto.DetectionMatchesResponse;
+import com.facecluster.facecluster_backend.dto.MatchDetectionResponse;
+import com.facecluster.facecluster_backend.service.CandidateService;
 import com.facecluster.facecluster_backend.service.FaceImageService;
 import com.facecluster.facecluster_backend.service.FaceMatchService;
 
@@ -32,19 +34,22 @@ private final ReportRepository reportRepository;
 private final MarkedRepository markedRepository;
 private final FaceImageService faceImageService;
 private final FaceMatchService faceMatchService;
+private final CandidateService candidateService;
 
 public FaceAppearanceController(
         FaceAppearanceRepository repository,
         ReportRepository reportRepository,
         MarkedRepository markedRepository,
         FaceImageService faceImageService,
-        FaceMatchService faceMatchService
+        FaceMatchService faceMatchService,
+        CandidateService candidateService
 ) {
     this.repository = repository;
     this.reportRepository = reportRepository;
     this.markedRepository = markedRepository;
     this.faceImageService = faceImageService;
     this.faceMatchService = faceMatchService;
+    this.candidateService = candidateService;
 }
 
 
@@ -82,6 +87,16 @@ public List<FaceAppearance> findByIds(@RequestParam List<String> faceIds) {
 @GetMapping("/{faceId}/matches")
 public DetectionMatchesResponse matches(@PathVariable String faceId) {
     return faceMatchService.group(faceId);
+}
+
+
+@GetMapping("/{faceId}/candidates")
+public List<MatchDetectionResponse> candidates(
+        @PathVariable String faceId,
+        @RequestParam(required = false) Integer limit,
+        @RequestParam(required = false) Double minScore
+) {
+    return candidateService.candidates(faceId, limit, minScore);
 }
 
 

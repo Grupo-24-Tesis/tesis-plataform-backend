@@ -45,7 +45,8 @@ class ApiExceptionHandlerTest {
                 reportRepository,
                 markedRepository,
                 faceImageService,
-                mock(com.facecluster.facecluster_backend.service.FaceMatchService.class)
+                mock(com.facecluster.facecluster_backend.service.FaceMatchService.class),
+                mock(com.facecluster.facecluster_backend.service.CandidateService.class)
         );
         ReportController reportController = new ReportController(reportRepository, mock(com.facecluster.facecluster_backend.repository.GuardRepository.class), java.time.Clock.systemUTC());
 

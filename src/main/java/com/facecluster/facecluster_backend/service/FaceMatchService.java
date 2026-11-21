@@ -271,6 +271,10 @@ public class FaceMatchService {
     }
 
     private List<MatchDetectionResponse> detectionsOf(Collection<String> faceIds) {
+        return detections(faceIds, Map.of());
+    }
+
+    public List<MatchDetectionResponse> detections(Collection<String> faceIds, Map<String, Double> scores) {
         if (faceIds.isEmpty()) {
             return List.of();
         }
@@ -303,7 +307,7 @@ public class FaceMatchService {
                         videoNames.get(appearance.getJobId()),
                         appearance.getTimestamp(),
                         appearance.getCapturedAt(),
-                        null,
+                        scores.get(appearance.getFaceId()),
                         appearance.getFrameUrl()))
                 .toList();
     }

@@ -210,6 +210,8 @@ Un vigilante decide que dos detecciones de videos distintos son la misma persona
 
 `GET /api/face-appearances/{faceId}/matches` devuelve el grupo de la detección: las coincidencias confirmadas son transitivas (si A=B y B=C, C aparece entre las de A), calculadas como componente conexa sobre los enlaces `confirmada`. `links` lista cada enlace con su id, los dos `faceId`, el vigilante y la fecha para poder quitarlo, y `detections` lista las demás detecciones del grupo ordenadas por `capturedAt` y luego `faceId`, con cámara, video, instante, URL prefirmada y `score` nulo. Quitar el enlace central de una cadena A=B=C separa el grupo.
 
+`GET /api/face-appearances/{faceId}/candidates?limit=&minScore=` propone detecciones de otros videos que podrían ser la misma persona, ordenadas por similitud. La similitud (`score`) es el producto punto de los embeddings unitarios del modelo `matching.model`, entre -1 y 1. La consulta a Mongo carga solo `faceId`, `jobId` y `vector` de los embeddings del modelo cuyo `jobId` es distinto del de la detección, de modo que las detecciones del mismo video nunca aparecen; también se omiten los pares ya decididos (`confirmada` o `descartada`) y las detecciones sin embedding. No hay umbral por defecto: el vigilante decide con el ranking. `limit` vale 20 por defecto (`matching.candidates-limit`) y debe estar entre 1 y 100; `minScore` es opcional y, si se da, debe estar entre -1 y 1 y conserva solo `score >= minScore`. El orden es `score` descendente y luego `capturedAt`; solo los elementos devueltos reciben cámara, video y URL prefirmada, y los que ya no tienen imagen en S3 se descartan. Errores en JSON: 400 `limit debe estar entre 1 y 100`, 400 `minScore debe estar entre -1 y 1`, 404 `Detección no encontrada: <faceId>`, 409 `La detección no tiene embedding`.
+
 `matchCount` (cuántas otras detecciones hay en el grupo confirmado) acompaña a las apariciones de `GET /api/face-appearances`, `/by-ids`, `/unique` y `GET /api/video-jobs/{jobId}/faces`. `POST /api/video-jobs/{jobId}/retry` responde 409 si alguna detección del trabajo tiene coincidencias confirmadas.
 
 ## Endpoints
@@ -233,6 +235,7 @@ Un vigilante decide que dos detecciones de videos distintos son la misma persona
 | `GET /api/face-appearances/unique` | Apariciones agrupadas por `faceId`. Filtros: `startDate`, `endDate`, `hasReports`, `suspect` |
 | `POST /api/face-matches`, `DELETE /api/face-matches/{id}` | Registra o deshace una decisión `confirmada` o `descartada` sobre un par de detecciones de videos distintos |
 | `GET /api/face-appearances/{faceId}/matches` | Enlaces y detecciones del grupo confirmado de una detección. 404 si no existe |
+| `GET /api/face-appearances/{faceId}/candidates` | Detecciones de otros videos ordenadas por similitud de embedding. Parámetros opcionales `limit` (1 a 100, 20 por defecto) y `minScore`. 404 si no existe, 409 si no tiene embedding |
 | `GET /api/reports`, `POST /api/reports` | Reportes de incidentes. `POST` acepta `createdByGuardId` opcional; si se envía y el vigilante no existe responde 400 `El vigilante no existe` |
 | `GET /api/reports/{id}` | Detalle de un reporte. 404 `Reporte no encontrado` si no existe |
 | `GET /api/reports/filter` | Filtros: `status`, `date`, `startDate`, `endDate`, `dateType`. Con `dateType=resolucion` filtra por `resolvedAt`; en otro caso, por `incidentDate` |
