@@ -3,6 +3,7 @@ package com.facecluster.facecluster_backend.controller;
 import com.facecluster.facecluster_backend.api.ApiExceptionHandler;
 import com.facecluster.facecluster_backend.domain.FaceAppearance;
 import com.facecluster.facecluster_backend.dto.VideoJobResponse;
+import com.facecluster.facecluster_backend.service.FaceMatchService;
 import com.facecluster.facecluster_backend.service.JobFacesService;
 import com.facecluster.facecluster_backend.service.VideoJobService;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,6 +18,7 @@ import java.util.List;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -27,14 +29,17 @@ class VideoJobControllerTest {
 
     private VideoJobService videoJobService;
     private JobFacesService jobFacesService;
+    private FaceMatchService faceMatchService;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         videoJobService = mock(VideoJobService.class);
         jobFacesService = mock(JobFacesService.class);
+        faceMatchService = mock(FaceMatchService.class);
+        when(faceMatchService.withMatchCounts(any())).thenAnswer(invocation -> invocation.getArgument(0));
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new VideoJobController(videoJobService, jobFacesService))
+                .standaloneSetup(new VideoJobController(videoJobService, jobFacesService, faceMatchService))
                 .setControllerAdvice(new ApiExceptionHandler())
                 .build();
     }

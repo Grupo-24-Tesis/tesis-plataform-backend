@@ -2,10 +2,14 @@ package com.facecluster.facecluster_backend.controller;
 
 import com.facecluster.facecluster_backend.api.ApiExceptionHandler;
 import com.facecluster.facecluster_backend.domain.FaceAppearance;
+import com.facecluster.facecluster_backend.dto.DetectionMatchesResponse;
+import com.facecluster.facecluster_backend.dto.DetectionMatchesResponse.MatchLink;
+import com.facecluster.facecluster_backend.dto.MatchDetectionResponse;
 import com.facecluster.facecluster_backend.repository.FaceAppearanceRepository;
 import com.facecluster.facecluster_backend.repository.MarkedRepository;
 import com.facecluster.facecluster_backend.repository.ReportRepository;
 import com.facecluster.facecluster_backend.service.FaceImageService;
+import com.facecluster.facecluster_backend.service.FaceMatchService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Range;
@@ -39,7 +43,8 @@ class FaceAppearanceControllerTest {
                         repository,
                         mock(ReportRepository.class),
                         mock(MarkedRepository.class),
-                        faceImageService
+                        faceImageService,
+                        faceMatchService
                 ))
                 .setControllerAdvice(new ApiExceptionHandler())
                 .build();
@@ -57,13 +62,22 @@ class FaceAppearanceControllerTest {
                 .contains(LocalDateTime.parse("2026-08-22T23:59:59.999999999"));
     }
 
+    private final FaceMatchService faceMatchService = passthroughMatchService();
+
+    private static FaceMatchService passthroughMatchService() {
+        FaceMatchService mocked = mock(FaceMatchService.class);
+        when(mocked.withMatchCounts(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        return mocked;
+    }
+
     private MockMvc byIdsMockMvc(FaceAppearanceRepository repository, FaceImageService faceImageService) {
         return MockMvcBuilders
                 .standaloneSetup(new FaceAppearanceController(
                         repository,
                         mock(ReportRepository.class),
                         mock(MarkedRepository.class),
-                        faceImageService
+                        faceImageService,
+                        faceMatchService
                 ))
                 .setControllerAdvice(new ApiExceptionHandler())
                 .build();
@@ -120,5 +134,54 @@ class FaceAppearanceControllerTest {
         byIdsMockMvc(repository, faceImageService)
                 .perform(get("/api/face-appearances/by-ids").param("faceIds", ids))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void matchesEndpointReturnsGroup() throws Exception {
+        MatchDetectionResponse other = new MatchDetectionResponse(
+                "job-2_1", "job-2", "cam-2", "Torre", "b.mp4", "00:00:05",
+                LocalDateTime.parse("2026-11-20T10:00:00"), null, "https://presigned/b"
+        );
+        MatchLink link = new MatchLink(
+                "job-1_1|job-2_1", "job-1_1", "job-2_1", null,
+                LocalDateTime.parse("2026-11-20T11:00:00")
+        );
+        when(faceMatchService.group("job-1_1"))
+                .thenReturn(new DetectionMatchesResponse("job-1_1", List.of(link), List.of(other)));
+
+        byIdsMockMvc(mock(FaceAppearanceRepository.class), mock(FaceImageService.class))
+                .perform(get("/api/face-appearances/job-1_1/matches"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.faceId").value("job-1_1"))
+                .andExpect(jsonPath("$.links[0].id").value("job-1_1|job-2_1"))
+                .andExpect(jsonPath("$.detections[0].faceId").value("job-2_1"))
+                .andExpect(jsonPath("$.detections[0].cameraName").value("Torre"));
+    }
+
+    @Test
+    void listsCarryMatchCount() throws Exception {
+        FaceAppearanceRepository repository = mock(FaceAppearanceRepository.class);
+        FaceImageService faceImageService = mock(FaceImageService.class);
+        FaceAppearance found = new FaceAppearance();
+        found.setFaceId("job-1_1");
+        found.setJobId("job-1");
+        when(repository.findAll()).thenReturn(List.of(found));
+        when(repository.findAllById(List.of("job-1_1"))).thenReturn(List.of(found));
+        when(faceImageService.withS3Images(List.of(found))).thenReturn(List.of(found));
+        when(faceImageService.withS3ImagesByJob(List.of(found))).thenReturn(List.of(found));
+        when(faceMatchService.withMatchCounts(List.of(found))).thenAnswer(invocation -> {
+            found.setMatchCount(2);
+            return List.of(found);
+        });
+
+        MockMvc mockMvc = byIdsMockMvc(repository, faceImageService);
+
+        mockMvc.perform(get("/api/face-appearances"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].matchCount").value(2));
+        mockMvc.perform(get("/api/face-appearances/by-ids").param("faceIds", "job-1_1"))
+                .andExpect(jsonPath("$[0].matchCount").value(2));
+        mockMvc.perform(get("/api/face-appearances/unique"))
+                .andExpect(jsonPath("$[0].appearances[0].matchCount").value(2));
     }
 }

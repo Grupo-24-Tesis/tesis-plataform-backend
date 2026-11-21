@@ -77,6 +77,9 @@ class VideoJobServiceTest {
     @Mock
     private SqsVideoJobPublisher sqsVideoJobPublisher;
 
+    @Mock
+    private FaceMatchService faceMatchService;
+
     private VideoJobService service;
 
     @BeforeEach
@@ -93,7 +96,8 @@ class VideoJobServiceTest {
                 UPLOADED_TIMEOUT_MINUTES,
                 QUEUED_TIMEOUT_MINUTES,
                 PROCESSING_TIMEOUT_MINUTES,
-                MODEL
+                MODEL,
+                faceMatchService
         );
     }
 
@@ -655,6 +659,26 @@ class VideoJobServiceTest {
     }
 
     @Test
+    void retryRefusedWhenDetectionHasConfirmedMatch() {
+        failedJob(VideoJobStatus.FAILED);
+        FaceAppearance appearance = new FaceAppearance();
+        appearance.setFaceId("job-1_1");
+        when(faceAppearanceRepository.findByJobIdOrderByTimestampAsc("job-1"))
+                .thenReturn(List.of(appearance));
+        when(faceMatchService.hasConfirmedMatch(List.of("job-1_1"))).thenReturn(true);
+
+        assertThatThrownBy(() -> service.retryJob("job-1"))
+                .isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
+                    assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+                    assertThat(exception.getReason()).isEqualTo(
+                            "La detección tiene coincidencias confirmadas; quítelas antes de reintentar");
+                });
+
+        verify(faceAppearanceRepository, never()).deleteByJobId(any());
+        verify(sqsVideoJobPublisher, never()).publish(any());
+    }
+
+    @Test
     void retryOfFailedOrQueueErrorJobRequeuesIt() {
         for (String status : List.of(VideoJobStatus.FAILED, VideoJobStatus.QUEUE_ERROR)) {
             VideoJob job = failedJob(status);
@@ -1062,7 +1086,8 @@ class VideoJobServiceTest {
                 UPLOADED_TIMEOUT_MINUTES,
                 QUEUED_TIMEOUT_MINUTES,
                 PROCESSING_TIMEOUT_MINUTES,
-                MODEL
+                MODEL,
+                faceMatchService
         );
     }
 

@@ -6,7 +6,9 @@ import com.facecluster.facecluster_backend.domain.FaceAppearance;
 import com.facecluster.facecluster_backend.repository.FaceAppearanceRepository;
 import com.facecluster.facecluster_backend.repository.MarkedRepository;
 import com.facecluster.facecluster_backend.repository.ReportRepository;
+import com.facecluster.facecluster_backend.dto.DetectionMatchesResponse;
 import com.facecluster.facecluster_backend.service.FaceImageService;
+import com.facecluster.facecluster_backend.service.FaceMatchService;
 
 import org.springframework.data.domain.Range;
 import org.springframework.http.HttpStatus;
@@ -29,23 +31,28 @@ private final FaceAppearanceRepository repository;
 private final ReportRepository reportRepository;
 private final MarkedRepository markedRepository;
 private final FaceImageService faceImageService;
+private final FaceMatchService faceMatchService;
 
 public FaceAppearanceController(
         FaceAppearanceRepository repository,
         ReportRepository reportRepository,
         MarkedRepository markedRepository,
-        FaceImageService faceImageService
+        FaceImageService faceImageService,
+        FaceMatchService faceMatchService
 ) {
     this.repository = repository;
     this.reportRepository = reportRepository;
     this.markedRepository = markedRepository;
     this.faceImageService = faceImageService;
+    this.faceMatchService = faceMatchService;
 }
 
 
 @GetMapping
 public List<FaceAppearance> findAll() {
-    return faceImageService.withS3Images(repository.findAll());
+    return faceMatchService.withMatchCounts(
+            faceImageService.withS3Images(repository.findAll())
+    );
 }
 
 
@@ -66,7 +73,15 @@ public List<FaceAppearance> findByIds(@RequestParam List<String> faceIds) {
         );
     }
 
-    return faceImageService.withS3ImagesByJob(repository.findAllById(ids));
+    return faceMatchService.withMatchCounts(
+            faceImageService.withS3ImagesByJob(repository.findAllById(ids))
+    );
+}
+
+
+@GetMapping("/{faceId}/matches")
+public DetectionMatchesResponse matches(@PathVariable String faceId) {
+    return faceMatchService.group(faceId);
 }
 
 
@@ -118,7 +133,9 @@ public List<UniqueFaceResponse> findUniqueFaces(
     }
 
 
-    appearances = faceImageService.withS3Images(appearances);
+    appearances = faceMatchService.withMatchCounts(
+            faceImageService.withS3Images(appearances)
+    );
 
 
     Map<String, List<FaceAppearance>> grouped =

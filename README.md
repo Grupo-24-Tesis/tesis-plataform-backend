@@ -202,6 +202,16 @@ imágenes borradas. Las personas sin ninguna imagen en el bucket no se muestran.
 
 Un evento `VIDEO_PROCESSING_COMPLETED` del intento anterior puede llegar después del reintento. Se acepta sin lógica adicional: los rostros son los mismos del mismo video.
 
+## Coincidencias entre detecciones
+
+Un vigilante decide que dos detecciones de videos distintos son la misma persona (`confirmada`) o no (`descartada`). Las decisiones se guardan en `face_matches`, una por par, con `_id` igual a `<faceId menor>|<faceId mayor>` en orden de texto, de modo que decidir el mismo par desde cualquiera de los dos lados, o dos veces, actualiza el mismo documento. Cada documento guarda `faceIdA`, `faceIdB` (ambos indexados), `decision`, `score` (la similitud que vio el vigilante), `model`, `createdByGuardId`, `createdAt` y `updatedAt`. Referencian detecciones por `faceId`, nunca por embedding.
+
+`POST /api/face-matches` recibe `faceIdA`, `faceIdB`, `decision`, `score` y `createdByGuardId` opcional. Responde 201 si crea la decisión y 200 si la cambia o la repite. Errores en JSON: 400 `Una detección no puede coincidir consigo misma`, 400 `Decisión inválida: use confirmada o descartada`, 400 `Las dos detecciones son del mismo video`, 400 `El vigilante no existe`, 404 `Detección no encontrada: <faceId>`. `DELETE /api/face-matches/{id}` deshace una decisión (204, o 404 `Decisión no encontrada`).
+
+`GET /api/face-appearances/{faceId}/matches` devuelve el grupo de la detección: las coincidencias confirmadas son transitivas (si A=B y B=C, C aparece entre las de A), calculadas como componente conexa sobre los enlaces `confirmada`. `links` lista cada enlace con su id, los dos `faceId`, el vigilante y la fecha para poder quitarlo, y `detections` lista las demás detecciones del grupo ordenadas por `capturedAt` y luego `faceId`, con cámara, video, instante, URL prefirmada y `score` nulo. Quitar el enlace central de una cadena A=B=C separa el grupo.
+
+`matchCount` (cuántas otras detecciones hay en el grupo confirmado) acompaña a las apariciones de `GET /api/face-appearances`, `/by-ids`, `/unique` y `GET /api/video-jobs/{jobId}/faces`. `POST /api/video-jobs/{jobId}/retry` responde 409 si alguna detección del trabajo tiene coincidencias confirmadas.
+
 ## Endpoints
 
 | Método y ruta | Uso |
@@ -221,6 +231,8 @@ Un evento `VIDEO_PROCESSING_COMPLETED` del intento anterior puede llegar despué
 | `GET /api/face-appearances` | Apariciones de rostros con URL prefirmadas |
 | `GET /api/face-appearances/by-ids?faceIds=a,b,c` | Apariciones de esos `faceId` con URL prefirmadas. Omite los ids desconocidos y las imágenes que no están en S3. Máximo 50 ids por consulta (400 si se supera). Lista S3 solo bajo `faces/<jobId>/` de los videos involucrados |
 | `GET /api/face-appearances/unique` | Apariciones agrupadas por `faceId`. Filtros: `startDate`, `endDate`, `hasReports`, `suspect` |
+| `POST /api/face-matches`, `DELETE /api/face-matches/{id}` | Registra o deshace una decisión `confirmada` o `descartada` sobre un par de detecciones de videos distintos |
+| `GET /api/face-appearances/{faceId}/matches` | Enlaces y detecciones del grupo confirmado de una detección. 404 si no existe |
 | `GET /api/reports`, `POST /api/reports` | Reportes de incidentes. `POST` acepta `createdByGuardId` opcional; si se envía y el vigilante no existe responde 400 `El vigilante no existe` |
 | `GET /api/reports/{id}` | Detalle de un reporte. 404 `Reporte no encontrado` si no existe |
 | `GET /api/reports/filter` | Filtros: `status`, `date`, `startDate`, `endDate`, `dateType`. Con `dateType=resolucion` filtra por `resolvedAt`; en otro caso, por `incidentDate` |

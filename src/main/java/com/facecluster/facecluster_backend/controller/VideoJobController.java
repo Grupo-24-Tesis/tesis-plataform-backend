@@ -2,6 +2,7 @@ package com.facecluster.facecluster_backend.controller;
 
 import com.facecluster.facecluster_backend.domain.FaceAppearance;
 import com.facecluster.facecluster_backend.dto.VideoJobResponse;
+import com.facecluster.facecluster_backend.service.FaceMatchService;
 import com.facecluster.facecluster_backend.service.JobFacesService;
 import com.facecluster.facecluster_backend.service.VideoJobService;
 import com.facecluster.facecluster_backend.dto.VideoResultRequest;
@@ -21,13 +22,16 @@ public class VideoJobController {
 
     private final VideoJobService videoJobService;
     private final JobFacesService jobFacesService;
+    private final FaceMatchService faceMatchService;
 
     public VideoJobController(
             VideoJobService videoJobService,
-            JobFacesService jobFacesService
+            JobFacesService jobFacesService,
+            FaceMatchService faceMatchService
     ) {
         this.videoJobService = videoJobService;
         this.jobFacesService = jobFacesService;
+        this.faceMatchService = faceMatchService;
     }
 
     @GetMapping
@@ -41,7 +45,7 @@ public class VideoJobController {
     public List<FaceAppearance> getJobFaces(
             @PathVariable String jobId
     ) {
-        return jobFacesService.getFaces(jobId);
+        return faceMatchService.withMatchCounts(jobFacesService.getFaces(jobId));
     }
 
     @GetMapping("/{jobId}")

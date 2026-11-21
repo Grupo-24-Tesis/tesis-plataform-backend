@@ -3,6 +3,7 @@ package com.facecluster.facecluster_backend.domain;
 import java.time.LocalDateTime;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -24,6 +25,9 @@ public class FaceAppearance {
 
     @Indexed
     private LocalDateTime capturedAt;
+
+    @Transient
+    private Integer matchCount;
 
     public FaceAppearance() {}
 
@@ -52,4 +56,7 @@ public class FaceAppearance {
     public void setCapturedAt(LocalDateTime capturedAt) {
         this.capturedAt = capturedAt;
     }
+
+    public Integer getMatchCount() { return matchCount; }
+    public void setMatchCount(Integer matchCount) { this.matchCount = matchCount; }
 }

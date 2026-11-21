@@ -54,6 +54,7 @@ public class VideoJobService {
     private final long queuedTimeoutMinutes;
     private final long processingTimeoutMinutes;
     private final String matchingModel;
+    private final FaceMatchService faceMatchService;
 
     public VideoJobService(
             VideoJobRepository videoJobRepository,
@@ -67,7 +68,8 @@ public class VideoJobService {
             @Value("${video-jobs.uploaded-timeout-minutes}") long uploadedTimeoutMinutes,
             @Value("${video-jobs.queued-timeout-minutes}") long queuedTimeoutMinutes,
             @Value("${video-jobs.processing-timeout-minutes}") long processingTimeoutMinutes,
-            @Value("${matching.model}") String matchingModel
+            @Value("${matching.model}") String matchingModel,
+            FaceMatchService faceMatchService
     ) {
         this.videoJobRepository = videoJobRepository;
         this.faceAppearanceRepository = faceAppearanceRepository;
@@ -81,6 +83,7 @@ public class VideoJobService {
         this.queuedTimeoutMinutes = queuedTimeoutMinutes;
         this.processingTimeoutMinutes = processingTimeoutMinutes;
         this.matchingModel = matchingModel;
+        this.faceMatchService = faceMatchService;
     }
 
     public VideoJobResponse registerUploadedVideo(VideoUploadedRequest request) {
@@ -108,6 +111,18 @@ public class VideoJobService {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "Solo se pueden reintentar videos fallidos"
+            );
+        }
+
+        List<String> faceIds = faceAppearanceRepository
+                .findByJobIdOrderByTimestampAsc(job.getId()).stream()
+                .map(FaceAppearance::getFaceId)
+                .toList();
+
+        if (faceMatchService.hasConfirmedMatch(faceIds)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "La detección tiene coincidencias confirmadas; quítelas antes de reintentar"
             );
         }
 
