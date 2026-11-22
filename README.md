@@ -248,7 +248,8 @@ Los reportes tienen dos estados, `investigacion` y `solucionado`; otro valor res
 Las marcas son únicas por `faceId`. Al arrancar, `MarkedIndexInitializer` elimina las marcas duplicadas, conserva la más antigua de cada `faceId` y crea el índice único.
 
 `faceId` tiene la forma `<jobId>_<trackId>`: identifica a una persona dentro de un video.
-No hay reconocimiento de la misma persona entre videos.
+La misma persona en dos videos tiene dos `faceId`; quedan unidas solo cuando un vigilante
+confirma la coincidencia (ver "Coincidencias entre detecciones").
 
 ## Métricas de procesamiento
 
@@ -312,4 +313,5 @@ sí Java 21.
 ## Limitaciones conocidas
 
 - No hay autenticación. La selección de vigilante del frontend no es un inicio de sesión, y cualquier cliente que llegue al puerto del backend puede usar la API. Por eso `docker-compose.yml` publica los puertos solo en `127.0.0.1`.
-- La identidad es por video. El `faceId` es `<jobId>_<trackId>`: el sistema no reconoce a la misma persona en videos distintos y no identifica a las personas.
+- La identidad es por video y el sistema no identifica a las personas. El `faceId` es `<jobId>_<trackId>`. Entre videos el backend solo propone candidatos por similitud de embedding (`GET /api/face-appearances/{faceId}/candidates`); la unión la confirma un vigilante. Las detecciones guardadas sin `embedding` no pueden buscarse.
+- La búsqueda de candidatos carga en memoria los vectores de todos los embeddings del modelo de los demás videos. Su tiempo no se ha medido con volúmenes grandes.
