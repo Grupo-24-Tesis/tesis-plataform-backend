@@ -19,7 +19,7 @@ Repositorios relacionados: `tesis-plataform-page` (frontend) y
 | Spring Boot | 3.3.2 (`spring-boot-starter-web`, `spring-boot-starter-data-mongodb`) |
 | MongoDB | 7 |
 | AWS SDK for Java v2 | 2.55.7 (S3 y SQS) |
-| Maven | wrapper incluido (`mvnw`) |
+| Maven | 3.9 (la imagen Docker usa `maven:3.9.8-eclipse-temurin-21`) |
 
 `pom.xml` fija `httpclient5` 5.4.1 y `httpcore5` 5.3.2 para que las dos versiones sean
 compatibles entre sí.
